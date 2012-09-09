@@ -47,7 +47,6 @@ import java.util.Random;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
-import java.util.Map.Entry;
 import java.util.concurrent.TimeUnit;
 
 import javax.management.NotCompliantMBeanException;
@@ -113,6 +112,7 @@ import org.apache.hadoop.net.CachedDNSToSwitchMapping;
 import org.apache.hadoop.net.DNSToSwitchMapping;
 import org.apache.hadoop.net.NetworkTopology;
 import org.apache.hadoop.net.Node;
+import org.apache.hadoop.net.NodeBase;
 import org.apache.hadoop.net.ScriptBasedMapping;
 import org.apache.hadoop.security.AccessControlException;
 import org.apache.hadoop.security.UserGroupInformation;
@@ -331,7 +331,7 @@ public class FSNamesystem implements FSConstants, FSNamesystemMBean,
   private Host2NodesMap host2DataNodeMap = new Host2NodesMap();
     
   // datanode networktoplogy
-  NetworkTopology clusterMap = new NetworkTopology();
+  NetworkTopology clusterMap;
   private DNSToSwitchMapping dnsToSwitchMapping;
   
   // for block replicas placement
@@ -419,7 +419,7 @@ public class FSNamesystem implements FSConstants, FSNamesystemMBean,
         conf.getInt("dfs.namenode.decommission.interval", 30),
         conf.getInt("dfs.namenode.decommission.nodes.per.interval", 5)));
     dnthread.start();
-
+    
     this.dnsToSwitchMapping = ReflectionUtils.newInstance(
         conf.getClass("topology.node.switch.mapping.impl", ScriptBasedMapping.class,
             DNSToSwitchMapping.class), conf);
@@ -489,11 +489,16 @@ public class FSNamesystem implements FSConstants, FSNamesystemMBean,
     this.defaultPermission = PermissionStatus.createImmutable(
         fsOwner.getShortUserName(), supergroup, new FsPermission(filePermission));
 
-
-    this.replicator = new ReplicationTargetChooser(
-                         conf.getBoolean("dfs.replication.considerLoad", true),
-                         this,
-                         clusterMap);
+    this.clusterMap = (NetworkTopology) ReflectionUtils.newInstance(
+            conf.getClass("net.topology.impl", NetworkTopology.class,
+                NetworkTopology.class), conf);
+    
+    this.replicator = ReflectionUtils.newInstance(
+        conf.getClass("dfs.block.replicator.classname", ReplicationTargetChooser.class,
+            ReplicationTargetChooser.class), conf);
+    this.replicator.initialize(
+        conf.getBoolean("dfs.replication.considerLoad", true), this, clusterMap);
+    
     this.defaultReplication = conf.getInt("dfs.replication", 3);
     this.maxReplication = conf.getInt("dfs.replication.max", 512);
     this.minReplication = conf.getInt("dfs.replication.min", 1);
@@ -904,8 +909,17 @@ public class FSNamesystem implements FSConstants, FSNamesystemMBean,
     LocatedBlocks blocks = getBlockLocations(src, offset, length, true, true);
     if (blocks != null) {
       //sort the blocks
-      DatanodeDescriptor client = host2DataNodeMap.getDatanodeByHost(
+      // As it is possible for the separation of node manager and datanode, 
+      // here we should get node but not datanode only .
+      Node client = host2DataNodeMap.getDatanodeByHost(
           clientMachine);
+      if (client == null) {
+          List<String> hosts = new ArrayList<String> (1);
+          hosts.add(clientMachine);
+          String rName = dnsToSwitchMapping.resolve(hosts).get(0);
+          if (rName != null)
+            client = new NodeBase(clientMachine, rName);
+        }
       for (LocatedBlock b : blocks.getLocatedBlocks()) {
         clusterMap.pseudoSortByDistance(client, b.getLocations());
       }
@@ -3842,7 +3856,7 @@ public class FSNamesystem implements FSConstants, FSNamesystemMBean,
       }
     }
     chooseExcessReplicates(nonExcess, block, replication, 
-        addedNode, delNodeHint);    
+        addedNode, delNodeHint);
   }
 
   /**
@@ -3864,35 +3878,12 @@ public class FSNamesystem implements FSConstants, FSNamesystemMBean,
                               DatanodeDescriptor addedNode,
                               DatanodeDescriptor delNodeHint) {
     // first form a rack to datanodes map and
-    HashMap<String, ArrayList<DatanodeDescriptor>> rackMap =
-      new HashMap<String, ArrayList<DatanodeDescriptor>>();
-    for (Iterator<DatanodeDescriptor> iter = nonExcess.iterator();
-         iter.hasNext();) {
-      DatanodeDescriptor node = iter.next();
-      String rackName = node.getNetworkLocation();
-      ArrayList<DatanodeDescriptor> datanodeList = rackMap.get(rackName);
-      if(datanodeList==null) {
-        datanodeList = new ArrayList<DatanodeDescriptor>();
-      }
-      datanodeList.add(node);
-      rackMap.put(rackName, datanodeList);
-    }
+    Map<String, List<DatanodeDescriptor>> rackMap =
+      new HashMap<String, List<DatanodeDescriptor>>();
+    List<DatanodeDescriptor> priSet = new ArrayList<DatanodeDescriptor>();
+    List<DatanodeDescriptor> remains = new ArrayList<DatanodeDescriptor>();
     
-    // split nodes into two sets
-    // priSet contains nodes on rack with more than one replica
-    // remains contains the remaining nodes
-    ArrayList<DatanodeDescriptor> priSet = new ArrayList<DatanodeDescriptor>();
-    ArrayList<DatanodeDescriptor> remains = new ArrayList<DatanodeDescriptor>();
-    for( Iterator<Entry<String, ArrayList<DatanodeDescriptor>>> iter = 
-      rackMap.entrySet().iterator(); iter.hasNext(); ) {
-      Entry<String, ArrayList<DatanodeDescriptor>> rackEntry = iter.next();
-      ArrayList<DatanodeDescriptor> datanodeList = rackEntry.getValue(); 
-      if( datanodeList.size() == 1 ) {
-        remains.add(datanodeList.get(0));
-      } else {
-        priSet.addAll(datanodeList);
-      }
-    }
+    replicator.splitNodesWithLocalityGroup(nonExcess, rackMap, priSet, remains);
     
     // pick one node to delete that favors the delete hint
     // otherwise pick one with least space from priSet if it is not empty
@@ -3900,42 +3891,18 @@ public class FSNamesystem implements FSConstants, FSNamesystemMBean,
     boolean firstOne = true;
     while (nonExcess.size() - replication > 0) {
       DatanodeInfo cur = null;
-      long minSpace = Long.MAX_VALUE;
 
       // check if we can del delNodeHint
       if (firstOne && delNodeHint !=null && nonExcess.contains(delNodeHint) &&
             (priSet.contains(delNodeHint) || (addedNode != null && !priSet.contains(addedNode))) ) {
           cur = delNodeHint;
-      } else { // regular excessive replica removal
-        Iterator<DatanodeDescriptor> iter = 
-          priSet.isEmpty() ? remains.iterator() : priSet.iterator();
-          while( iter.hasNext() ) {
-            DatanodeDescriptor node = iter.next();
-            long free = node.getRemaining();
-
-            if (minSpace > free) {
-              minSpace = free;
-              cur = node;
-            }
-          }
+      } else { 
+        cur = replicator.chooseReplicaToDelete(priSet, remains);
+        
       }
 
       firstOne = false;
-      // adjust rackmap, priSet, and remains
-      String rack = cur.getNetworkLocation();
-      ArrayList<DatanodeDescriptor> datanodes = rackMap.get(rack);
-      datanodes.remove(cur);
-      if(datanodes.isEmpty()) {
-        rackMap.remove(rack);
-      }
-      if( priSet.remove(cur) ) {
-        if (datanodes.size() == 1) {
-          priSet.remove(datanodes.get(0));
-          remains.add(datanodes.get(0));
-        }
-      } else {
-        remains.remove(cur);
-      }
+      replicator.adjustSetsWithChosenReplica(rackMap, priSet, remains, cur);
 
       nonExcess.remove(cur);
 
