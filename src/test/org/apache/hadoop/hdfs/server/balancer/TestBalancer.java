@@ -52,7 +52,7 @@ public class TestBalancer extends TestCase {
 
   static final int DEFAULT_BLOCK_SIZE = 10;
   private Balancer balancer;
-  private Random r = new Random();
+  private static Random r = new Random();
 
   static {
     Balancer.setBlockMoveWaitTime(1000L) ;
@@ -106,7 +106,7 @@ public class TestBalancer extends TestCase {
   }
 
   /* Distribute all blocks according to the given distribution */
-  Block[][] distributeBlocks(Block[] blocks, short replicationFactor, 
+  static Block[][] distributeBlocks(Block[] blocks, short replicationFactor, 
       final long[] distribution ) {
     // make a copy
     long[] usedSpace = new long[distribution.length];
@@ -175,11 +175,13 @@ public class TestBalancer extends TestCase {
     for(long capacity:capacities) {
       totalCapacity += capacity;
     }
-    runBalancer(conf, totalUsedSpace, totalCapacity);
+    runBalancer(cluster, client, new Balancer(conf),
+        totalUsedSpace, totalCapacity);
   }
 
   /* wait for one heartbeat */
-  private void waitForHeartBeat( long expectedUsedSpace, long expectedTotalSpace )
+  static void waitForHeartBeat(ClientProtocol client, long expectedUsedSpace, 
+      long expectedTotalSpace )
   throws IOException {
     long[] status = client.getStats();
     while(status[0] != expectedTotalSpace || status[1] != expectedUsedSpace ) {
@@ -220,22 +222,23 @@ public class TestBalancer extends TestCase {
       totalCapacity += newCapacity;
 
       // run balancer and validate results
-      runBalancer(conf, totalUsedSpace, totalCapacity);
+      runBalancer(cluster, client, new Balancer(conf), 
+          totalUsedSpace, totalCapacity);
     } finally {
       cluster.shutdown();
     }
   }
 
   /* Start balancer and check if the cluster is balanced after the run */
-  private void runBalancer(Configuration conf, long totalUsedSpace, long totalCapacity )
-  throws Exception {
-    waitForHeartBeat(totalUsedSpace, totalCapacity);
+  protected static void runBalancer(MiniDFSCluster cluster,
+      ClientProtocol client, Balancer balancer, long totalUsedSpace,
+      long totalCapacity ) throws Exception {
+    waitForHeartBeat(client, totalUsedSpace, totalCapacity);
 
     // start rebalancing
-    balancer = new Balancer(conf);
     balancer.run(new String[0]);
 
-    waitForHeartBeat(totalUsedSpace, totalCapacity);
+    waitForHeartBeat(client, totalUsedSpace, totalCapacity);
     boolean balanced;
     do {
       DatanodeInfo[] datanodeReport = 
