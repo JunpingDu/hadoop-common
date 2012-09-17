@@ -458,6 +458,13 @@
 </property>
 
 
+<property>
+  <name>dfs.block.replicator.classname</name>
+  <value></value>
+  <description> The implementation of BlockPlacementPolicy.
+  </description>
+</property>
+
 <!-- Topology Configuration -->
 
 <property>
