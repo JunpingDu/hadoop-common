@@ -2231,7 +2231,7 @@ public class JobTracker implements MRConstants, InterTrackerProtocol,
     this.numTaskCacheLevels = conf.getInt("mapred.task.cache.levels", 
         NetworkTopology.DEFAULT_HOST_LEVEL);
     this.isNodeGroupAware = conf.getBoolean(
-            "mapred.jobtracker.nodegroup.awareness", false);
+            "mapred.jobtracker.nodegroup.aware", false);
     
     plugins = conf.getInstances("mapreduce.jobtracker.plugins",
         ServicePlugin.class);

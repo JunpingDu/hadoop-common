@@ -460,7 +460,7 @@
 
 <property>
   <name>dfs.block.replicator.classname</name>
-  <value></value>
+  <value>org.apache.hadoop.hdfs.server.namenode.BlockPlacementPolicyDefault</value>
   <description> The implementation of BlockPlacementPolicy.
   </description>
 </property>

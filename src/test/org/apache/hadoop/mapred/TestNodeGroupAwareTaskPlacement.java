@@ -154,7 +154,7 @@ public class TestNodeGroupAwareTaskPlacement extends TestCase {
       
       conf.setBoolean("net.topology.nodegroup.aware", true);
       
-      conf.setBoolean("mapred.jobtracker.nodegroup.awareness", true);
+      conf.setBoolean("mapred.jobtracker.nodegroup.aware", true);
       conf.setInt("mapred.task.cache.levels", 3);
       
       conf.set("mapred.jobtracker.jobSchedulable",
