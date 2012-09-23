@@ -88,7 +88,18 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
                                     long blocksize) {
     return chooseTarget(numOfReplicas, writer, chosenNodes, null, blocksize);
   }
-    
+  
+  /**
+   * Add <i>localMachine</i> and related nodes to <i>excludedNodes</i>
+   * for next replica choosing.
+   * In sub class, we can add more related nodes than localMachine
+   */
+  protected void addToExcludedNodes(
+                                    DatanodeDescriptor localMachine,
+                                    HashMap<Node, Node> excludedNodes){
+    excludedNodes.put(localMachine, localMachine);
+  }
+  
   /**
    * This is not part of the public API but is used by the unit tests.
    */
@@ -117,8 +128,9 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
       
     List<DatanodeDescriptor> results = 
       new ArrayList<DatanodeDescriptor>(chosenNodes);
-    for (Node node:chosenNodes) {
-      excludedNodes.put(node, node);
+    for (DatanodeDescriptor node:chosenNodes) {
+      // add localMachine and related nodes to excludedNodes
+      addToExcludedNodes(node, excludedNodes);
     }
       
     if (!clusterMap.contains(writer)) {
@@ -191,8 +203,8 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
     }
     return writer;
   }
-    
-  /* choose <i>localMachine</i> as the target.
+  
+  /**choose <i>localMachine</i> as the target.
    * if <i>localMachine</i> is not available, 
    * choose a node on the same rack
    * @return the chosen node
@@ -215,6 +227,8 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
       if (isGoodTarget(localMachine, blocksize,
                        maxNodesPerRack, false, results)) {
         results.add(localMachine);
+        // add localMachine and related nodes to excludedNodes
+        addToExcludedNodes(localMachine, excludedNodes);
         return localMachine;
       }
     } 
@@ -340,6 +354,8 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
         numOfAvailableNodes--;
         if (isGoodTarget(chosenNode, blocksize, maxNodesPerRack, results)) {
           results.add(chosenNode);
+          // add localMachine and related nodes to excludedNodes
+          addToExcludedNodes(chosenNode, excludedNodes);
           return chosenNode;
         }
       }
@@ -371,6 +387,9 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
         if (isGoodTarget(chosenNode, blocksize, maxNodesPerRack, results)) {
           numOfReplicas--;
           results.add(chosenNode);
+          // add localMachine and related nodes to excludedNodes
+          addToExcludedNodes(chosenNode, excludedNodes);
+          
         }
       }
     }

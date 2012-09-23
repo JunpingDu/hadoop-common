@@ -23,8 +23,10 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import junit.framework.TestCase;
 import org.apache.hadoop.conf.Configuration;
@@ -35,11 +37,13 @@ import org.apache.hadoop.hdfs.protocol.FSConstants;
 import org.apache.hadoop.hdfs.server.namenode.NameNode;
 import org.apache.hadoop.net.NetworkTopology;
 import org.apache.hadoop.net.Node;
+import org.apache.hadoop.net.TopologyResolver;
 import org.junit.Test;
 
 public class TestReplicationPolicyWithNodeGroup extends TestCase {
   private static final int BLOCK_SIZE = 1024;
   private static final int NUM_OF_DATANODES = 8;
+  private static final int NUM_OF_DATANODES_BOUNDARY = 6;
   private static final Configuration CONF = new Configuration();
   private static final NetworkTopology cluster;
   private static final NameNode namenode;
@@ -55,6 +59,14 @@ public class TestReplicationPolicyWithNodeGroup extends TestCase {
       new DatanodeDescriptor(new DatanodeID("h6:5020"), "/d1/r2/n4"),
       new DatanodeDescriptor(new DatanodeID("h7:5020"), "/d2/r3/n5"),
       new DatanodeDescriptor(new DatanodeID("h8:5020"), "/d2/r3/n6")
+  };
+  private final static DatanodeDescriptor dataNodesInBoundaryCase[] = new DatanodeDescriptor[] {
+      new DatanodeDescriptor(new DatanodeID("h1:5020"), "/d1/r1/n1"),
+      new DatanodeDescriptor(new DatanodeID("h2:5020"), "/d1/r1/n1"),
+      new DatanodeDescriptor(new DatanodeID("h3:5020"), "/d1/r1/n1"),
+      new DatanodeDescriptor(new DatanodeID("h4:5020"), "/d1/r1/n2"),
+      new DatanodeDescriptor(new DatanodeID("h5:5020"), "/d1/r2/n3"),
+      new DatanodeDescriptor(new DatanodeID("h6:5020"), "/d1/r2/n3")
   };
 
   private final static DatanodeDescriptor NODE = 
@@ -93,6 +105,27 @@ public class TestReplicationPolicyWithNodeGroup extends TestCase {
     }
   }
 
+  /**
+   * Scan the targets list: all targets should be on different NodeGroups.
+   * Return false if two targets are found on the same NodeGroup.
+   */
+  private static boolean checkTargetsOnDifferentNodeGroup(
+                                DatanodeDescriptor[] targets) {
+    if(targets.length == 0)
+      return true;
+    Set<String> targetSet = new HashSet<String>();
+    for(DatanodeDescriptor node:targets) {
+      String nodeGroup = TopologyResolver.getNodeGroup(
+          node.getNetworkLocation(), true);
+      if(targetSet.contains(nodeGroup)) {
+        return false;
+      } else {
+        targetSet.add(nodeGroup);
+      }
+    }
+    return true;
+  }
+  
   /**
    * In this testcase, client is dataNodes[0]. So the 1st replica should be
    * placed on dataNodes[0], the 2nd replica should be placed on 
@@ -133,12 +166,13 @@ public class TestReplicationPolicyWithNodeGroup extends TestCase {
 
     targets = replicator.chooseTarget(filename,
                                       4, dataNodes[0], BLOCK_SIZE);
+    
     assertEquals(targets.length, 4);
     assertEquals(targets[0], dataNodes[0]);
     assertTrue(cluster.isOnSameRack(targets[1], targets[2]) ||
                cluster.isOnSameRack(targets[2], targets[3]));
     assertFalse(cluster.isOnSameRack(targets[0], targets[2]));
-
+    assertTrue(checkTargetsOnDifferentNodeGroup(targets));
     dataNodes[0].updateHeartbeat(
         2*FSConstants.MIN_BLOCKS_FOR_WRITE*BLOCK_SIZE, 0L,
         FSConstants.MIN_BLOCKS_FOR_WRITE*BLOCK_SIZE, 0); 
@@ -182,6 +216,7 @@ public class TestReplicationPolicyWithNodeGroup extends TestCase {
     assertFalse(cluster.isOnSameNodeGroup(targets[1], targets[2]) ||
             cluster.isOnSameNodeGroup(targets[2], targets[3]));
     assertFalse(cluster.isOnSameRack(targets[1], targets[3]));
+    assertTrue(checkTargetsOnDifferentNodeGroup(targets));
   }
 
   /**
@@ -229,12 +264,14 @@ public class TestReplicationPolicyWithNodeGroup extends TestCase {
     for(int i=1; i<4; i++) {
       assertFalse(cluster.isOnSameNodeGroup(targets[0], targets[i]));
     }
+    assertTrue(checkTargetsOnDifferentNodeGroup(targets));
     assertTrue(cluster.isOnSameRack(targets[1], targets[2]) ||
                cluster.isOnSameRack(targets[2], targets[3]));
 
     dataNodes[0].updateHeartbeat(
         2*FSConstants.MIN_BLOCKS_FOR_WRITE*BLOCK_SIZE, 0L,
         FSConstants.MIN_BLOCKS_FOR_WRITE*BLOCK_SIZE, 0); 
+    
   }
 
   /**
@@ -279,6 +316,7 @@ public class TestReplicationPolicyWithNodeGroup extends TestCase {
     assertTrue(cluster.isOnSameRack(targets[0], targets[1]) ||
                cluster.isOnSameRack(targets[1], targets[2]));
     assertFalse(cluster.isOnSameRack(targets[0], targets[2]));
+    assertTrue(checkTargetsOnDifferentNodeGroup(targets));
   }
 
   /**
@@ -310,8 +348,10 @@ public class TestReplicationPolicyWithNodeGroup extends TestCase {
     assertTrue(cluster.isOnSameRack(targets[1], targets[2]));
     assertFalse(cluster.isOnSameNodeGroup(targets[1], targets[2]));
     assertFalse(cluster.isOnSameRack(targets[0], targets[1]));
+    assertTrue(checkTargetsOnDifferentNodeGroup(targets));
   }
-
+  
+  
   /**
    * This testcase tests re-replication, when dataNodes[0] is already chosen.
    * So the 1st replica can be placed on random rack. 
@@ -474,6 +514,76 @@ public class TestReplicationPolicyWithNodeGroup extends TestCase {
     chosenNode = replicator.chooseReplicaToDelete(
         new INodeFile(), new Block(), (short)3, first, second);
     assertEquals(chosenNode, dataNodes[5]);
+    
+  }
+  
+  /**
+   * Test replica placement policy in case of boundary topology.
+   * Rack 2 has only 1 node group & can't be placed with two replicas
+   * The 1st replica will be placed on writer.
+   * The 2nd replica should be placed on a different rack 
+   * The 3rd replica should be placed on the same rack with writer, but on a 
+   * different node group.
+   */
+  @Test
+  public void testChooseTargetsOnBoundaryTopology() throws Exception {
+    for(int i=0; i<NUM_OF_DATANODES; i++) {
+      cluster.remove(dataNodes[i]);
+    }
+    for(int i=0; i<NUM_OF_DATANODES_BOUNDARY; i++) {
+      cluster.add(dataNodesInBoundaryCase[i]);
+    }
+    for(int i=0; i<NUM_OF_DATANODES_BOUNDARY; i++) {
+      dataNodesInBoundaryCase[i].updateHeartbeat(
+        2*FSConstants.MIN_BLOCKS_FOR_WRITE*BLOCK_SIZE, 0L,
+        2*FSConstants.MIN_BLOCKS_FOR_WRITE*BLOCK_SIZE, 0);
+      }
+    
+    DatanodeDescriptor[] targets;
+    targets = replicator.chooseTarget(filename,
+                                      0, dataNodesInBoundaryCase[0], BLOCK_SIZE);
+    assertEquals(targets.length, 0);
+    targets = replicator.chooseTarget(filename,
+                                      1, dataNodesInBoundaryCase[0], BLOCK_SIZE);
+    assertEquals(targets.length, 1);
+    targets = replicator.chooseTarget(filename,
+                                      2, dataNodesInBoundaryCase[0], BLOCK_SIZE);
+    assertEquals(targets.length, 2);
+    assertFalse(cluster.isOnSameRack(targets[0], targets[1]));
+    
+    targets = replicator.chooseTarget(filename,
+                                      3, dataNodesInBoundaryCase[0], BLOCK_SIZE);
+    assertEquals(targets.length, 3);
+    assertTrue(checkTargetsOnDifferentNodeGroup(targets));
+  }
+  
+  /**
+   * Test re-replication policy in boundary case.
+   * Rack 2 has only one node group & the node in this node group is chosen
+   * Rack 1 has two nodegroups & one of them is chosen.
+   * Replica policy should choose the node from node group of Rack1 but not the
+   * same nodegroup with chosen nodes.
+   */
+  @Test
+  public void testRereplicateOnBoundaryTopology() throws Exception {
+    for(int i=0; i<NUM_OF_DATANODES_BOUNDARY; i++) {
+      dataNodesInBoundaryCase[i].updateHeartbeat(
+        2*FSConstants.MIN_BLOCKS_FOR_WRITE*BLOCK_SIZE, 0L,
+        2*FSConstants.MIN_BLOCKS_FOR_WRITE*BLOCK_SIZE, 0);
+    }
+    List<DatanodeDescriptor> chosenNodes = new ArrayList<DatanodeDescriptor>();
+    chosenNodes.add(dataNodesInBoundaryCase[0]);
+    chosenNodes.add(dataNodesInBoundaryCase[5]);
+    DatanodeDescriptor[] targets;
+    
+    targets = replicator.chooseTarget(filename,
+                                      1, dataNodesInBoundaryCase[0],
+                                      chosenNodes, BLOCK_SIZE);
+    assertFalse(cluster.isOnSameNodeGroup(targets[0], 
+                                          dataNodesInBoundaryCase[0]));
+    assertFalse(cluster.isOnSameNodeGroup(targets[0],
+                dataNodesInBoundaryCase[5]));
+    assertTrue(checkTargetsOnDifferentNodeGroup(targets));
   }
 }
 
