@@ -94,10 +94,11 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
    * for next replica choosing.
    * In sub class, we can add more related nodes than localMachine
    */
-  protected void addToExcludedNodes(
+  protected int addToExcludedNodes(
                                     DatanodeDescriptor localMachine,
                                     HashMap<Node, Node> excludedNodes){
-    excludedNodes.put(localMachine, localMachine);
+    Node node = excludedNodes.put(localMachine, localMachine);
+    return node == null ? 1:0;
   }
   
   /**
@@ -388,7 +389,8 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
           numOfReplicas--;
           results.add(chosenNode);
           // add localMachine and related nodes to excludedNodes
-          addToExcludedNodes(chosenNode, excludedNodes);
+          int newExcludedNodes = addToExcludedNodes(chosenNode, excludedNodes);
+          numOfAvailableNodes -= newExcludedNodes;
           
         }
       }

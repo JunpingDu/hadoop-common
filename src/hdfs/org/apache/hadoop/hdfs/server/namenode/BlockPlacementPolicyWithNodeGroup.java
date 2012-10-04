@@ -48,14 +48,20 @@ public class BlockPlacementPolicyWithNodeGroup extends
    * within the same nodegroup
    */
   @Override
-  protected void addToExcludedNodes(
+  protected int addToExcludedNodes(
                                     DatanodeDescriptor localMachine,
                                     HashMap<Node, Node> excludedNodes) {
+    int count = 0;
     String nodeGroupScope = localMachine.getNetworkLocation();
     List<Node> leafNodes = clusterMap.getLeaves(nodeGroupScope);
     for (Node leafNode : leafNodes) {
-      excludedNodes.put(leafNode, leafNode);
+      Node node = excludedNodes.put(leafNode, leafNode);
+      // new node
+      if (node == null) {
+        count++;
+      }
     }
+    return count;
   }
   
   /** Choose node with other locality other than <i>localMachine</i>.

@@ -44,6 +44,7 @@ public class TestReplicationPolicyWithNodeGroup extends TestCase {
   private static final int BLOCK_SIZE = 1024;
   private static final int NUM_OF_DATANODES = 8;
   private static final int NUM_OF_DATANODES_BOUNDARY = 6;
+  private static final int NUM_OF_DATANODES_ALL = 12;
   private static final Configuration CONF = new Configuration();
   private static final NetworkTopology cluster;
   private static final NameNode namenode;
@@ -67,6 +68,36 @@ public class TestReplicationPolicyWithNodeGroup extends TestCase {
       new DatanodeDescriptor(new DatanodeID("h4:5020"), "/d1/r1/n2"),
       new DatanodeDescriptor(new DatanodeID("h5:5020"), "/d1/r2/n3"),
       new DatanodeDescriptor(new DatanodeID("h6:5020"), "/d1/r2/n3")
+  };
+  
+/*  private final static DatanodeDescriptor dataNodesIn12NodeCase[] = new DatanodeDescriptor[] {
+      new DatanodeDescriptor(new DatanodeID("h1:5020"), "/r1/n1"),
+      new DatanodeDescriptor(new DatanodeID("h2:5020"), "/r1/n1"),
+      new DatanodeDescriptor(new DatanodeID("h3:5020"), "/r1/n2"),
+      new DatanodeDescriptor(new DatanodeID("h4:5020"), "/r1/n2"),
+      new DatanodeDescriptor(new DatanodeID("h5:5020"), "/r1/n3"),
+      new DatanodeDescriptor(new DatanodeID("h6:5020"), "/r1/n3"),
+      new DatanodeDescriptor(new DatanodeID("h7:5020"), "/r2/n4"),
+      new DatanodeDescriptor(new DatanodeID("h8:5020"), "/r2/n4"),
+      new DatanodeDescriptor(new DatanodeID("h9:5020"), "/r2/n5"),
+      new DatanodeDescriptor(new DatanodeID("h10:5020"), "/r2/n5"),
+      new DatanodeDescriptor(new DatanodeID("h11:5020"), "/r2/n6"),
+      new DatanodeDescriptor(new DatanodeID("h12:5020"), "/r2/n6")
+  };*/
+  
+  private final static DatanodeDescriptor dataNodesIn12NodeCase[] = new DatanodeDescriptor[] {
+      new DatanodeDescriptor(new DatanodeID("h1:5020"), "/QE1/sin2-pekaurora-bdcqe010.eng.vmware.com"),
+      new DatanodeDescriptor(new DatanodeID("h2:5020"), "/QE2/sin2-pekaurora-bdcqe012.eng.vmware.com"),
+      new DatanodeDescriptor(new DatanodeID("h3:5020"), "/QE1/sin2-pekaurora-bdcqe007.eng.vmware.com"),
+      new DatanodeDescriptor(new DatanodeID("h4:5020"), "/QE2/sin2-pekaurora-bdcqe014.eng.vmware.com"),
+      new DatanodeDescriptor(new DatanodeID("h5:5020"), "/QE1/sin2-pekaurora-bdcqe011.eng.vmware.com"),
+      new DatanodeDescriptor(new DatanodeID("h6:5020"), "/QE2/sin2-pekaurora-bdcqe013.eng.vmware.com"),
+      new DatanodeDescriptor(new DatanodeID("h7:5020"), "/QE1/sin2-pekaurora-bdcqe010.eng.vmware.com"),
+      new DatanodeDescriptor(new DatanodeID("h8:5020"), "/QE2/sin2-pekaurora-bdcqe012.eng.vmware.com"),
+      new DatanodeDescriptor(new DatanodeID("h9:5020"), "/QE1/sin2-pekaurora-bdcqe007.eng.vmware.com"),
+      new DatanodeDescriptor(new DatanodeID("h10:5020"), "/QE2/sin2-pekaurora-bdcqe014.eng.vmware.com"),
+      new DatanodeDescriptor(new DatanodeID("h11:5020"), "/QE1/sin2-pekaurora-bdcqe011.eng.vmware.com"),
+      new DatanodeDescriptor(new DatanodeID("h12:5020"), "/QE2/sin2-pekaurora-bdcqe013.eng.vmware.com"),
   };
 
   private final static DatanodeDescriptor NODE = 
@@ -585,5 +616,61 @@ public class TestReplicationPolicyWithNodeGroup extends TestCase {
                 dataNodesInBoundaryCase[5]));
     assertTrue(checkTargetsOnDifferentNodeGroup(targets));
   }
+  
+  /**
+   * Test re-replication policy in boundary case.
+   * Rack 2 has only one node group & the node in this node group is chosen
+   * Rack 1 has two nodegroups & one of them is chosen.
+   * Replica policy should choose the node from node group of Rack1 but not the
+   * same nodegroup with chosen nodes.
+   */
+  @Test
+  public void testRereplicateOn12NodesTopology() throws Exception {
+
+      for(int i=0; i<NUM_OF_DATANODES_BOUNDARY; i++) {
+        cluster.remove(dataNodesInBoundaryCase[i]);
+      }
+      for(int i=0; i<NUM_OF_DATANODES_ALL; i++) {
+        cluster.add(dataNodesIn12NodeCase[i]);
+      }
+      
+      for(int i=0; i<NUM_OF_DATANODES_ALL; i++) {
+        dataNodesIn12NodeCase[i].updateHeartbeat(
+        2*FSConstants.MIN_BLOCKS_FOR_WRITE*BLOCK_SIZE, 0L,
+        2*FSConstants.MIN_BLOCKS_FOR_WRITE*BLOCK_SIZE, 0);
+      }
+      
+      DatanodeDescriptor[] targets;
+      targets = replicator.chooseTarget(filename,
+                                        0, dataNodesInBoundaryCase[0], BLOCK_SIZE);
+      assertEquals(targets.length, 0);
+      targets = replicator.chooseTarget(filename,
+                                        1, dataNodesInBoundaryCase[0], BLOCK_SIZE);
+      assertEquals(targets.length, 1);
+      targets = replicator.chooseTarget(filename,
+                                        2, dataNodesInBoundaryCase[0], BLOCK_SIZE);
+      assertEquals(targets.length, 2);
+      assertFalse(cluster.isOnSameRack(targets[0], targets[1]));
+      
+      targets = replicator.chooseTarget(filename,
+                                        3, dataNodesInBoundaryCase[0], BLOCK_SIZE);
+      assertEquals(targets.length, 3);
+      assertTrue(checkTargetsOnDifferentNodeGroup(targets));
+    
+    targets = replicator.chooseTarget(filename,
+            3, dataNodesInBoundaryCase[0], BLOCK_SIZE);
+    assertEquals(targets.length, 3);
+    assertTrue(checkTargetsOnDifferentNodeGroup(targets));
+    
+    // Test Replica number over physical nodes
+    targets = replicator.chooseTarget(filename,
+            10, dataNodesInBoundaryCase[0], BLOCK_SIZE);
+    assertTrue(checkTargetsOnDifferentNodeGroup(targets));
+    // Only can place 6 replicas.
+    assertEquals(targets.length, 6);
+  }
+  
 }
+
+
 
