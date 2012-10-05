@@ -45,17 +45,23 @@ public class BlockPlacementPolicyWithNodeGroup extends
   
   /**Find other nodes in the same nodegroup of <i>localMachine</i> and add them
    * into <i>excludeNodes</i> as replica should not be duplicated for nodes 
-   * within the same nodegroup
+   * within the same nodegroup.
+   * @return number of new excluded nodes
    */
   @Override
-  protected void addToExcludedNodes(
-                                    DatanodeDescriptor localMachine,
-                                    HashMap<Node, Node> excludedNodes) {
+  protected int addToExcludedNodes(DatanodeDescriptor localMachine,
+                                   HashMap<Node, Node> excludedNodes) {
+    int countOfExcludedNodes = 0;
     String nodeGroupScope = localMachine.getNetworkLocation();
     List<Node> leafNodes = clusterMap.getLeaves(nodeGroupScope);
     for (Node leafNode : leafNodes) {
-      excludedNodes.put(leafNode, leafNode);
+      Node node = excludedNodes.put(leafNode, leafNode);
+      // not a existing node in excludedNodes
+      if (node == null) {
+        countOfExcludedNodes++;
+      }
     }
+    return countOfExcludedNodes;
   }
   
   /** Choose node with other locality other than <i>localMachine</i>.

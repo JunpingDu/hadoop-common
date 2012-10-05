@@ -44,6 +44,7 @@ public class TestReplicationPolicyWithNodeGroup extends TestCase {
   private static final int BLOCK_SIZE = 1024;
   private static final int NUM_OF_DATANODES = 8;
   private static final int NUM_OF_DATANODES_BOUNDARY = 6;
+  private static final int NUM_OF_DATANODES_MORE_TARGETS = 12;
   private static final Configuration CONF = new Configuration();
   private static final NetworkTopology cluster;
   private static final NameNode namenode;
@@ -60,7 +61,8 @@ public class TestReplicationPolicyWithNodeGroup extends TestCase {
       new DatanodeDescriptor(new DatanodeID("h7:5020"), "/d2/r3/n5"),
       new DatanodeDescriptor(new DatanodeID("h8:5020"), "/d2/r3/n6")
   };
-  private final static DatanodeDescriptor dataNodesInBoundaryCase[] = new DatanodeDescriptor[] {
+  private final static DatanodeDescriptor dataNodesInBoundaryCase[] = 
+          new DatanodeDescriptor[] {
       new DatanodeDescriptor(new DatanodeID("h1:5020"), "/d1/r1/n1"),
       new DatanodeDescriptor(new DatanodeID("h2:5020"), "/d1/r1/n1"),
       new DatanodeDescriptor(new DatanodeID("h3:5020"), "/d1/r1/n1"),
@@ -68,9 +70,26 @@ public class TestReplicationPolicyWithNodeGroup extends TestCase {
       new DatanodeDescriptor(new DatanodeID("h5:5020"), "/d1/r2/n3"),
       new DatanodeDescriptor(new DatanodeID("h6:5020"), "/d1/r2/n3")
   };
+  
+  private final static DatanodeDescriptor dataNodesInMoreTargetsCase[] = 
+          new DatanodeDescriptor[] {
+      new DatanodeDescriptor(new DatanodeID("h1:5020"), "/r1/n1"),
+      new DatanodeDescriptor(new DatanodeID("h2:5020"), "/r1/n1"),
+      new DatanodeDescriptor(new DatanodeID("h3:5020"), "/r1/n2"),
+      new DatanodeDescriptor(new DatanodeID("h4:5020"), "/r1/n2"),
+      new DatanodeDescriptor(new DatanodeID("h5:5020"), "/r1/n3"),
+      new DatanodeDescriptor(new DatanodeID("h6:5020"), "/r1/n3"),
+      new DatanodeDescriptor(new DatanodeID("h7:5020"), "/r2/n4"),
+      new DatanodeDescriptor(new DatanodeID("h8:5020"), "/r2/n4"),
+      new DatanodeDescriptor(new DatanodeID("h9:5020"), "/r2/n5"),
+      new DatanodeDescriptor(new DatanodeID("h10:5020"), "/r2/n5"),
+      new DatanodeDescriptor(new DatanodeID("h11:5020"), "/r2/n6"),
+      new DatanodeDescriptor(new DatanodeID("h12:5020"), "/r2/n6"),
+  };
 
   private final static DatanodeDescriptor NODE = 
-      new DatanodeDescriptor(new DatanodeDescriptor(new DatanodeID("h9:5020"), "/d2/r4/n7"));
+      new DatanodeDescriptor(new DatanodeDescriptor(
+          new DatanodeID("h9:5020"), "/d2/r4/n7"));
 
   static {
     try {
@@ -585,5 +604,53 @@ public class TestReplicationPolicyWithNodeGroup extends TestCase {
                 dataNodesInBoundaryCase[5]));
     assertTrue(checkTargetsOnDifferentNodeGroup(targets));
   }
+  
+  /**
+   * Test replica placement policy in case of targets more than number of 
+   * NodeGroups.
+   * The 12-nodes cluster only has 6 NodeGroups, but in some cases, like: 
+   * placing submitted job file, there is requirement to choose more (10) 
+   * targets for placing replica. We should test it can return 6 targets.
+   */
+  @Test
+  public void testChooseMoreTargetsThanNodeGroups() throws Exception {
+    // Cleanup nodes in previous tests
+    for(int i=0; i<NUM_OF_DATANODES_BOUNDARY; i++) {
+      DatanodeDescriptor node = dataNodesInBoundaryCase[i];
+      if (cluster.contains(node)) {
+        cluster.remove(node);
+      }
+    }
+
+    for(int i=0; i<NUM_OF_DATANODES_MORE_TARGETS; i++) {
+      cluster.add(dataNodesInMoreTargetsCase[i]);
+    }
+
+    for(int i=0; i<NUM_OF_DATANODES_MORE_TARGETS; i++) {
+      dataNodesInMoreTargetsCase[i].updateHeartbeat(
+      2*FSConstants.MIN_BLOCKS_FOR_WRITE*BLOCK_SIZE, 0L,
+      2*FSConstants.MIN_BLOCKS_FOR_WRITE*BLOCK_SIZE, 0);
+    }
+
+    DatanodeDescriptor[] targets;
+    targets = replicator.chooseTarget(filename,
+                                      3, dataNodesInBoundaryCase[0], BLOCK_SIZE);
+    assertEquals(targets.length, 3);
+    assertTrue(checkTargetsOnDifferentNodeGroup(targets));
+    
+    // Test normal case -- 3 replicas
+    targets = replicator.chooseTarget(filename,
+                                      3, dataNodesInBoundaryCase[0], BLOCK_SIZE);
+    assertEquals(targets.length, 3);
+    assertTrue(checkTargetsOnDifferentNodeGroup(targets));
+    
+    // Test special case -- replica number over node groups.
+    targets = replicator.chooseTarget(filename,
+                                      10, dataNodesInBoundaryCase[0], BLOCK_SIZE);
+    assertTrue(checkTargetsOnDifferentNodeGroup(targets));
+    // Verify it only can find 6 targets for placing replicas.
+    assertEquals(targets.length, 6);
+  }
+  
 }
 
