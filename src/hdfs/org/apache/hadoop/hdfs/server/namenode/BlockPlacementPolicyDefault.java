@@ -264,8 +264,23 @@ public class BlockPlacementPolicyDefault extends BlockPlacementPolicy {
     return chooseLocalRack(localMachine, excludedNodes, blocksize,
         maxNodesPerRack, results, avoidStaleNodes);
   }
+  
+  /** Choose node with other locality other than <i>localMachine</i>.
+   * As there is no local node is available, choose one node with nearest 
+   * locality.
+   * Default to be local rack, but could be overridden in sub-class for other 
+   * localities.
+   * @return the chosen node
+   */
+  protected DatanodeDescriptor chooseOtherLocalityNode(DatanodeDescriptor localMachine,
+      HashMap<Node, Node> excludedNodes, long blocksize, int maxNodesPerRack,
+      List<DatanodeDescriptor> results, boolean avoidStaleNodes) 
+      throws NotEnoughReplicasException {
+    return chooseLocalRack(localMachine, excludedNodes, blocksize,
+        maxNodesPerRack, results, avoidStaleNodes);
+  }
 
-/* choose one node from the rack that <i>localMachine</i> is on.
+  /* choose one node from the rack that <i>localMachine</i> is on.
    * if no such node is available, choose one node from the rack where
    * a second replica is on.
    * if still no such node is available, choose a random node 
