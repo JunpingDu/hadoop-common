@@ -60,7 +60,6 @@ import org.apache.hadoop.hdfs.protocol.FSConstants.DatanodeReportType;
 import org.apache.hadoop.hdfs.security.token.block.BlockTokenIdentifier;
 import org.apache.hadoop.hdfs.security.token.block.BlockTokenSecretManager;
 import org.apache.hadoop.hdfs.security.token.block.ExportedBlockKeys;
-import org.apache.hadoop.hdfs.server.datanode.DataNode;
 import org.apache.hadoop.hdfs.server.namenode.NameNode;
 import org.apache.hadoop.hdfs.server.namenode.BlockPlacementPolicy;
 import org.apache.hadoop.hdfs.server.namenode.BlockPlacementPolicyDefault;
@@ -82,6 +81,7 @@ import org.apache.hadoop.net.NetworkTopology;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.util.Daemon;
+import org.apache.hadoop.util.ReflectionUtils;
 import org.apache.hadoop.util.StringUtils;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
@@ -227,7 +227,7 @@ public class Balancer implements Tool {
   private Map<String, BalancerDatanode> datanodes
                  = new HashMap<String, BalancerDatanode>();
   
-  private NetworkTopology cluster = new NetworkTopology();
+  private NetworkTopology cluster;
   
   private double avgUtilization = 0.0D;
   
@@ -746,8 +746,8 @@ public class Balancer implements Tool {
       long startTime = Util.now();
       this.blocksToReceive = 2*scheduledSize;
       boolean isTimeUp = false;
-      while(!isTimeUp && scheduledSize>0 &&
-          (!srcBlockList.isEmpty() || blocksToReceive>0)) {
+      while(!isTimeUp && scheduledSize > 0 &&
+          (!srcBlockList.isEmpty() || blocksToReceive > 0)) {
         PendingBlockMove pendingBlock = chooseNextBlockToMove();
         if (pendingBlock != null) {
           // move the block
@@ -796,7 +796,8 @@ public class Balancer implements Tool {
    */
   private void checkReplicationPolicyCompatibility(Configuration conf)
       throws UnsupportedActionException {
-    if (BlockPlacementPolicy.getInstance(conf, null, null).getClass() != BlockPlacementPolicyDefault.class) {
+    if (!(BlockPlacementPolicy.getInstance(conf, null, null) 
+        instanceof BlockPlacementPolicyDefault)) {
       throw new UnsupportedActionException(
           "Balancer without BlockPlacementPolicyDefault");
     }
@@ -1072,6 +1073,8 @@ public class Balancer implements Tool {
    * Return total number of bytes to move in this iteration
    */
   private long chooseNodes() {
+    // Match nodes taking into consideration a custom fault domain
+    chooseNodesForCustomFaultDomain();
     // Match nodes on the same rack first
     chooseNodes(true);
     // Then match nodes on different racks
@@ -1090,6 +1093,11 @@ public class Balancer implements Tool {
     return bytesToMove;
   }
 
+  protected void chooseNodesForCustomFaultDomain() {
+    if (cluster.isNodeGroupAware()) {
+      chooseNodesOnSameNodeGroup();
+    }
+  }
   /* if onRack is true, decide all <source, target> pairs
    * where source and target are on the same rack; Otherwise
    * decide all <source, target> pairs where source and target are
@@ -1115,7 +1123,137 @@ public class Balancer implements Tool {
      */
     chooseSources(aboveAvgUtilizedDatanodes.iterator(), onRack);
   }
-   
+  
+  /* Decide all <source, target> pairs where source and target are 
+   * on the same NodeGroup
+   */
+  private void chooseNodesOnSameNodeGroup() {
+
+    /* first step: match each overUtilized datanode (source) to
+     * one or more underUtilized datanodes within same NodeGroup(targets).
+     */
+    chooseTargetsOnSameNodeGroup(underUtilizedDatanodes.iterator());
+
+    /* match each remaining overutilized datanode (source) to below average 
+     * utilized datanodes within the same NodeGroup(targets).
+     * Note only overutilized datanodes that haven't had that max bytes to move
+     * satisfied in step 1 are selected
+     */
+    chooseTargetsOnSameNodeGroup(belowAvgUtilizedDatanodes.iterator());
+
+    /* match each remaining underutilized datanode to above average utilized 
+     * datanodes within the same NodeGroup.
+     * Note only underutilized datanodes that have not had that max bytes to
+     * move satisfied in step 1 are selected.
+     */
+    chooseSourcesOnSameNodeGroup(aboveAvgUtilizedDatanodes.iterator());
+  }
+  
+  private void chooseSourcesOnSameNodeGroup(Iterator<Source> sourceCandidates) {
+    for (Iterator<BalancerDatanode> targetIterator = underUtilizedDatanodes.iterator(); 
+        targetIterator.hasNext();) {
+      BalancerDatanode target = targetIterator.next();
+      while (chooseSourceOnSameNodeGroup(target, sourceCandidates)) {
+        // loop until find the source on the same node group for target
+      }
+      if (!target.isMoveQuotaFull()) {
+        targetIterator.remove();
+      }
+    }
+    return;
+  }
+  
+  // Choose source located on the same nodegroup for target 
+  private boolean chooseSourceOnSameNodeGroup(BalancerDatanode target,
+      Iterator<Source> sourceCandidates) {
+    if (!target.isMoveQuotaFull()) {
+      return false;
+    }
+    boolean foundSource = false;
+    Source source = null;
+    while (!foundSource && sourceCandidates.hasNext()) {
+      source = sourceCandidates.next();
+      if (!source.isMoveQuotaFull()) {
+        sourceCandidates.remove();
+        continue;
+      }
+      foundSource = areDataNodesOnSameNodeGroup(source.getDatanode(), target.getDatanode());
+    }
+    if (foundSource) {
+      assert(source != null):"Choose a null source";
+      long size = Math.min(source.availableSizeToMove(),
+          target.availableSizeToMove());
+      NodeTask nodeTask = new NodeTask(target, size);
+      source.addNodeTask(nodeTask);
+      target.incScheduledSize(nodeTask.getSize());
+      sources.add(source);
+      targets.add(target);
+      if ( !source.isMoveQuotaFull()) {
+        sourceCandidates.remove();
+      }
+      LOG.info("Decided to move "+StringUtils.byteDesc(size)+" bytes from "
+          +source.datanode.getName() + " to " + target.datanode.getName());
+      return true;
+    }
+    return false;
+  }
+  
+  private void chooseTargetsOnSameNodeGroup(Iterator<BalancerDatanode> targetCandidates) {
+    for (Iterator<Source> srcIterator = overUtilizedDatanodes.iterator();
+        srcIterator.hasNext();) {
+      Source source = srcIterator.next();
+      while (chooseTargetOnSameNodeGroup(source, targetCandidates)) {
+      // loop until find the target on the same node group for source
+      }
+      if (!source.isMoveQuotaFull()) {
+        srcIterator.remove();
+      }
+    }
+    return;
+  }
+  
+  /* For the given source, choose targets from the target candidate list.
+   * OnRackTarget determines if the chosen target should be on the same rack 
+   * as the source.
+   */
+  private boolean chooseTargetOnSameNodeGroup(Source source,
+      Iterator<BalancerDatanode> targetCandidates) {
+    if (!source.isMoveQuotaFull()) {
+      return false;
+    }
+    boolean foundTarget = false;
+    BalancerDatanode target = null;
+    while (!foundTarget && targetCandidates.hasNext()) {
+      target = targetCandidates.next();
+      if (!target.isMoveQuotaFull()) {
+        targetCandidates.remove();
+        continue;
+      }
+      foundTarget = areDataNodesOnSameNodeGroup(source.getDatanode(), target.getDatanode());
+    }
+    if (foundTarget) {
+      assert(target != null):"Choose a null target";
+      long size = Math.min(source.availableSizeToMove(),
+          target.availableSizeToMove());
+      NodeTask nodeTask = new NodeTask(target, size);
+      source.addNodeTask(nodeTask);
+      target.incScheduledSize(nodeTask.getSize());
+      sources.add(source);
+      targets.add(target);
+      if (!target.isMoveQuotaFull()) {
+        targetCandidates.remove();
+      }
+      LOG.info("Decided to move "+StringUtils.byteDesc(size)+" bytes from "
+          +source.datanode.getName() + " to " + target.datanode.getName());
+      return true;
+    }
+    return false;
+  }
+  
+  protected boolean areDataNodesOnSameNodeGroup(DatanodeInfo sourceDatanode, DatanodeInfo targetDatanode) { 
+    return cluster.isOnSameNodeGroup(sourceDatanode, targetDatanode);
+  }
+  
   /* choose targets from the target candidate list for each over utilized
    * source datanode. OnRackTarget determines if the chosen target 
    * should be on the same rack as the source
@@ -1391,6 +1529,11 @@ public class Balancer implements Tool {
     if (block.isLocatedOnDatanode(target)) {
       return false;
     }
+    
+    if (cluster.isNodeGroupAware() && 
+        isOnSameNodeGroupWithReplicas(target, block, source)) {
+      return false;
+    }
 
     boolean goodBlock = false;
     if (cluster.isOnSameRack(source.getDatanode(), target.getDatanode())) {
@@ -1423,9 +1566,24 @@ public class Balancer implements Tool {
     return goodBlock;
   }
   
+  /*
+   * Return true if target node is on the same node group with any replica
+   * other than source.
+   */
+  private boolean isOnSameNodeGroupWithReplicas(BalancerDatanode target,
+      BalancerBlock block, Source source) {
+    for (BalancerDatanode loc : block.locations) {
+      if (loc != source && 
+        areDataNodesOnSameNodeGroup(loc.getDatanode(), target.getDatanode())) {
+          return true;
+        }
+      }
+    return false;
+  }
+
   /* reset all fields in a balancer preparing for the next iteration */
   private void resetData() {
-    this.cluster = new NetworkTopology();
+    this.cluster = getNetworkTopologyInstance();
     this.overUtilizedDatanodes.clear();
     this.aboveAvgUtilizedDatanodes.clear();
     this.belowAvgUtilizedDatanodes.clear();
@@ -1436,6 +1594,13 @@ public class Balancer implements Tool {
     this.avgUtilization = 0.0D;
     cleanGlobalBlockList();
     this.movedBlocks.cleanup();
+  }
+
+  /* create a network topology instance.*/
+  private NetworkTopology getNetworkTopologyInstance() {
+    return (NetworkTopology) ReflectionUtils.newInstance(
+        conf.getClass("net.topology.impl", NetworkTopology.class,
+            NetworkTopology.class), conf);
   }
   
   /* Remove all blocks from the global block list except for the ones in the
@@ -1655,6 +1820,7 @@ public class Balancer implements Tool {
   /** set this balancer's configuration */
   public void setConf(Configuration conf) {
     this.conf = conf;
+    this.cluster = getNetworkTopologyInstance();
     movedBlocks.setWinWidth(conf);
   }
 
