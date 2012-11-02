@@ -336,7 +336,7 @@ public class NetworkTopology {
   /** Depth of all leaf nodes */
   private int depthOfAllLeaves = -1;
   protected int numOfRacks = 0;  // rack counter
-  protected ReadWriteLock netlock = new ReentrantReadWriteLock();
+  final protected ReadWriteLock netlock = new ReentrantReadWriteLock();
     
   public NetworkTopology() {
     clusterMap = new InnerNode(InnerNode.ROOT);
@@ -606,7 +606,7 @@ public class NetworkTopology {
     return node1.getParent()==node2.getParent();
   }
     
-  final protected static Random r = new Random();
+  final private static Random r = new Random();
   /** randomly choose one node from <i>scope</i>
    * if scope starts with ~, choose one from the all nodes except for the
    * ones in <i>scope</i>; otherwise, choose one from <i>scope</i>
@@ -651,7 +651,7 @@ public class NetworkTopology {
         numOfDatanodes -= ((InnerNode)node).getNumOfLeaves();
       }
     }
-    int leaveIndex = r.nextInt(numOfDatanodes);
+    int leaveIndex = getNextRandomInt(numOfDatanodes);
     return innerNode.getLeaf(leaveIndex, node);
   }
 
@@ -662,6 +662,9 @@ public class NetworkTopology {
   public List<Node> getLeaves(String scope) {
     Node node = getNode(scope);
     List<Node> leafNodes = new ArrayList<Node>();
+    if (node == null) {
+      return leafNodes;
+    }
     if (!(node instanceof InnerNode)) {
       leafNodes.add(node);
     } else {
@@ -785,7 +788,18 @@ public class NetworkTopology {
     
     // put a random node at position 0 if it is not a local/local-rack node
     if(tempIndex == 0 && nodes.length != 0) {
-      swap(nodes, 0, r.nextInt(nodes.length));
+      swap(nodes, 0, getNextRandomInt(nodes.length));
     }
+  }
+  
+  /**
+   * Returns a pseudo random, uniformly distributed int value between 0 
+   * (inclusive) and the specified value (exclusive), drawn from this random 
+   * number generator's sequence.
+   * @param value
+   * @return random int value
+   */
+  protected int getNextRandomInt(int value) {
+    return r.nextInt(value);
   }
 }

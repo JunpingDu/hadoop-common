@@ -30,7 +30,7 @@ import org.apache.hadoop.classification.InterfaceStability;
  * @see NetworkTopology
  */
 @InterfaceAudience.LimitedPrivate({"HDFS", "MapReduce"})
-@InterfaceStability.Unstable
+@InterfaceStability.Evolving
 public class NetworkTopologyWithNodeGroup extends NetworkTopology {
 
   public final static String DEFAULT_NODEGROUP = "/default-nodegroup";
@@ -324,7 +324,7 @@ public class NetworkTopologyWithNodeGroup extends NetworkTopology {
     // local-rack node
     if (tempIndex == 0 && localNodeGroupNode == -1 && localRackNode == -1
         && nodes.length != 0) {
-      swap(nodes, 0, r.nextInt(nodes.length));
+      swap(nodes, 0, getNextRandomInt(nodes.length));
     }
   }
 

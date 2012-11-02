@@ -746,8 +746,8 @@ public class Balancer implements Tool {
       long startTime = Util.now();
       this.blocksToReceive = 2*scheduledSize;
       boolean isTimeUp = false;
-      while(!isTimeUp && scheduledSize>0 &&
-          (!srcBlockList.isEmpty() || blocksToReceive>0)) {
+      while(!isTimeUp && scheduledSize > 0 &&
+          (!srcBlockList.isEmpty() || blocksToReceive > 0)) {
         PendingBlockMove pendingBlock = chooseNextBlockToMove();
         if (pendingBlock != null) {
           // move the block
@@ -1151,9 +1151,10 @@ public class Balancer implements Tool {
   
   private void chooseSourcesOnSameNodeGroup(Iterator<Source> sourceCandidates) {
     for (Iterator<BalancerDatanode> targetIterator = underUtilizedDatanodes.iterator(); 
-         targetIterator.hasNext();) {
+        targetIterator.hasNext();) {
       BalancerDatanode target = targetIterator.next();
       while (chooseSourceOnSameNodeGroup(target, sourceCandidates)) {
+        // loop until find the source on the same node group for target
       }
       if (!target.isMoveQuotaFull()) {
         targetIterator.remove();
@@ -1202,6 +1203,7 @@ public class Balancer implements Tool {
         srcIterator.hasNext();) {
       Source source = srcIterator.next();
       while (chooseTargetOnSameNodeGroup(source, targetCandidates)) {
+      // loop until find the target on the same node group for source
       }
       if (!source.isMoveQuotaFull()) {
         srcIterator.remove();
@@ -1211,8 +1213,8 @@ public class Balancer implements Tool {
   }
   
   /* For the given source, choose targets from the target candidate list.
-   * OnRackTarget determines if the chosen target 
-   * should be on the same rack as the source
+   * OnRackTarget determines if the chosen target should be on the same rack 
+   * as the source.
    */
   private boolean chooseTargetOnSameNodeGroup(Source source,
       Iterator<BalancerDatanode> targetCandidates) {
@@ -1579,11 +1581,9 @@ public class Balancer implements Tool {
     return false;
   }
 
-/* reset all fields in a balancer preparing for the next iteration */
+  /* reset all fields in a balancer preparing for the next iteration */
   private void resetData() {
-    this.cluster = (NetworkTopology) ReflectionUtils.newInstance(
-        conf.getClass("net.topology.impl", NetworkTopology.class,
-            NetworkTopology.class), conf);
+    this.cluster = getNetworkTopologyInstance();
     this.overUtilizedDatanodes.clear();
     this.aboveAvgUtilizedDatanodes.clear();
     this.belowAvgUtilizedDatanodes.clear();
@@ -1594,6 +1594,13 @@ public class Balancer implements Tool {
     this.avgUtilization = 0.0D;
     cleanGlobalBlockList();
     this.movedBlocks.cleanup();
+  }
+
+  /* create a network topology instance.*/
+  private NetworkTopology getNetworkTopologyInstance() {
+    return (NetworkTopology) ReflectionUtils.newInstance(
+        conf.getClass("net.topology.impl", NetworkTopology.class,
+            NetworkTopology.class), conf);
   }
   
   /* Remove all blocks from the global block list except for the ones in the
@@ -1813,9 +1820,7 @@ public class Balancer implements Tool {
   /** set this balancer's configuration */
   public void setConf(Configuration conf) {
     this.conf = conf;
-    this.cluster = (NetworkTopology) ReflectionUtils.newInstance(
-        conf.getClass("net.topology.impl", NetworkTopology.class,
-            NetworkTopology.class), conf);
+    this.cluster = getNetworkTopologyInstance();
     movedBlocks.setWinWidth(conf);
   }
 

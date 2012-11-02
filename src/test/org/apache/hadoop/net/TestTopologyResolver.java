@@ -46,6 +46,24 @@ public class TestTopologyResolver {
     Assert.assertTrue("Get rack failed.", rack1.equals(TopologyResolver.getRack(node1, withNodeGroup)));
     Assert.assertTrue("Get nodegroup failed.", nodegroup1.equals(TopologyResolver.getNodeGroup(node1, withNodeGroup)));
   }
+  
+  @Test
+  public void testGetTopologyLayers() {
+    String topologyNullString = null;
+    String topologyBlankString = "";
+    String topologyNoLayerString = "host";
+    String topologyOneLayerString = "/rack";
+    String topologyTwoLayerString = "/rack/nodegroup";
+    String topologyThreeLayerString = "/datacenter/rack/nodegroup";
+    
+    Assert.assertEquals(0, TopologyResolver.getTopologyLayers(topologyNullString));
+    Assert.assertEquals(0, TopologyResolver.getTopologyLayers(topologyBlankString));
+    Assert.assertEquals(0, TopologyResolver.getTopologyLayers(topologyNoLayerString));
+    
+    Assert.assertEquals(1, TopologyResolver.getTopologyLayers(topologyOneLayerString));
+    Assert.assertEquals(2, TopologyResolver.getTopologyLayers(topologyTwoLayerString));
+    Assert.assertEquals(3, TopologyResolver.getTopologyLayers(topologyThreeLayerString));
+  }
 
 }
 

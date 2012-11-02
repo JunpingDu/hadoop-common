@@ -117,6 +117,7 @@ import org.apache.hadoop.net.NetworkTopology;
 import org.apache.hadoop.net.Node;
 import org.apache.hadoop.net.NodeBase;
 import org.apache.hadoop.net.ScriptBasedMapping;
+import org.apache.hadoop.net.TopologyResolver;
 import org.apache.hadoop.security.AccessControlException;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.UserGroupInformation.AuthenticationMethod;
@@ -2751,6 +2752,12 @@ public class FSNamesystem implements FSConstants, FSNamesystemMBean, FSClusterSt
       networkLocation = NetworkTopology.DEFAULT_RACK;
     } else {
       networkLocation = rName.get(0);
+      if (!clusterMap.isNodeGroupAware()) {
+        if (TopologyResolver.getTopologyLayers(networkLocation) >= 3) {
+          LOG.warn(
+              "The resolve call return 3 or more layers but without NodeGroup layer");
+        }
+      }
     }
     node.setNetworkLocation(networkLocation);
   }

@@ -48,5 +48,15 @@ public class TopologyResolver {
     int index = wholeString.lastIndexOf(PATH_SEPARATOR_STR);
     return wholeString.substring(index);
   }
+  
+  public static int getTopologyLayers(String networkLocation) {
+    if (networkLocation == null 
+        || !networkLocation.startsWith(PATH_SEPARATOR_STR)) {
+      return 0;
+    } else {
+      String[] t = networkLocation.split(PATH_SEPARATOR_STR);
+      return t.length - 1;
+    }
+  }
 
 }
