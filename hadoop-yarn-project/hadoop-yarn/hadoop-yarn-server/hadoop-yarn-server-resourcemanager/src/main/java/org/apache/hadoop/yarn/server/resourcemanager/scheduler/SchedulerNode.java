@@ -58,5 +58,14 @@ public abstract class SchedulerNode {
    * @return number of active containers on the node
    */
   public abstract int getNumContainers();
+  
+  /**
+   * Check if SchedulerNode is aware of NodeGroup
+   */
+  public abstract boolean isNodeGroupAware();
 
+  /**
+   * Get name of NodeGroup, return null if not aware of NodeGroup
+   */
+  public abstract String getNodeGroupName();
 }

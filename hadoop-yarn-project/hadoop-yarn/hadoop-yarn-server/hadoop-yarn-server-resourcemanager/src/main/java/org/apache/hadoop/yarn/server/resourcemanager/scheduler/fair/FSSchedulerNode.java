@@ -57,7 +57,7 @@ public class FSSchedulerNode extends SchedulerNode {
   private final Map<ContainerId, RMContainer> launchedContainers = 
     new HashMap<ContainerId, RMContainer>();
   
-  private final RMNode rmNode;
+  protected final RMNode rmNode;
 
   public static final String ANY = "*";
 
@@ -244,6 +244,16 @@ public class FSSchedulerNode extends SchedulerNode {
 
   public synchronized RMContainer getReservedContainer() {
     return reservedContainer;
+  }
+
+  @Override
+  public boolean isNodeGroupAware() {
+    return false;
+  }
+
+  @Override
+  public String getNodeGroupName() {
+    return null;
   }
 
 }

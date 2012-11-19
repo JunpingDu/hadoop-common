@@ -120,7 +120,7 @@ public class LeafQueue implements CSQueue {
   private final RecordFactory recordFactory = 
     RecordFactoryProvider.getRecordFactory(null);
 
-  private CapacitySchedulerContext scheduler;
+  protected CapacitySchedulerContext scheduler;
   
   private final ActiveUsersManager activeUsersManager;
   
@@ -135,8 +135,8 @@ public class LeafQueue implements CSQueue {
     // must be after parent and queueName are initialized
     this.metrics = old != null ? old.getMetrics() :
         QueueMetrics.forQueue(getQueuePath(), parent,
-			      cs.getConfiguration().getEnableUserMetrics(),
-			      cs.getConf());
+        cs.getConfiguration().getEnableUserMetrics(),
+        cs.getConf());
     this.activeUsersManager = new ActiveUsersManager(metrics);
     this.minimumAllocation = cs.getMinimumResourceCapability();
     this.maximumAllocation = cs.getMaximumResourceCapability();
@@ -821,7 +821,7 @@ public class LeafQueue implements CSQueue {
           application.addSchedulingOpportunity(priority);
           
           // Try to schedule
-          CSAssignment assignment =  
+          CSAssignment assignment = 
             assignContainersOnNode(clusterResource, node, application, priority, 
                 null);
 
@@ -879,7 +879,7 @@ public class LeafQueue implements CSQueue {
     // Try to assign if we have sufficient resources
     assignContainersOnNode(clusterResource, node, application, priority, 
         rmContainer);
-    
+
     // Doesn't matter... since it's already charged for at time of reservation
     // "re-reservation" is *free*
     return org.apache.hadoop.yarn.server.resourcemanager.resource.Resource.NONE;
@@ -1059,7 +1059,7 @@ public class LeafQueue implements CSQueue {
     return (((starvation + requiredContainers) - reservedContainers) > 0);
   }
 
-  private CSAssignment assignContainersOnNode(Resource clusterResource, 
+  protected CSAssignment assignContainersOnNode(Resource clusterResource, 
       FiCaSchedulerNode node, FiCaSchedulerApp application, 
       Priority priority, RMContainer reservedContainer) {
 
@@ -1088,7 +1088,7 @@ public class LeafQueue implements CSQueue {
         NodeType.OFF_SWITCH);
   }
 
-  private Resource assignNodeLocalContainers(Resource clusterResource, 
+  protected Resource assignNodeLocalContainers(Resource clusterResource, 
       FiCaSchedulerNode node, FiCaSchedulerApp application, 
       Priority priority, RMContainer reservedContainer) {
     ResourceRequest request = 
@@ -1104,7 +1104,7 @@ public class LeafQueue implements CSQueue {
     return Resources.none();
   }
 
-  private Resource assignRackLocalContainers(Resource clusterResource,  
+  protected Resource assignRackLocalContainers(Resource clusterResource,  
       FiCaSchedulerNode node, FiCaSchedulerApp application, Priority priority,
       RMContainer reservedContainer) {
     ResourceRequest request = 
@@ -1119,7 +1119,7 @@ public class LeafQueue implements CSQueue {
     return Resources.none();
   }
 
-  private Resource assignOffSwitchContainers(Resource clusterResource, FiCaSchedulerNode node, 
+  protected Resource assignOffSwitchContainers(Resource clusterResource, FiCaSchedulerNode node, 
       FiCaSchedulerApp application, Priority priority, 
       RMContainer reservedContainer) {
     ResourceRequest request = 
@@ -1172,7 +1172,7 @@ public class LeafQueue implements CSQueue {
           missedOpportunities
           );
     }
-
+    
     // Check if we need containers on this host
     if (type == NodeType.NODE_LOCAL) {
       // Now check if we need containers on this host...
@@ -1218,7 +1218,7 @@ public class LeafQueue implements CSQueue {
         application.getUser(), container.getResource());
   }
 
-  private Resource assignContainer(Resource clusterResource, FiCaSchedulerNode node, 
+  protected Resource assignContainer(Resource clusterResource, FiCaSchedulerNode node, 
       FiCaSchedulerApp application, Priority priority, 
       ResourceRequest request, NodeType type, RMContainer rmContainer) {
     if (LOG.isDebugEnabled()) {

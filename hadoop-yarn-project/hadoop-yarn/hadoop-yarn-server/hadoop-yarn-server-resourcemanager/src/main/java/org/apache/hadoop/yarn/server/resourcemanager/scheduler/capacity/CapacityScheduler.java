@@ -19,6 +19,7 @@
 package org.apache.hadoop.yarn.server.resourcemanager.scheduler.capacity;
 
 import java.io.IOException;
+import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -33,8 +34,12 @@ import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.classification.InterfaceStability.Evolving;
 import org.apache.hadoop.conf.Configurable;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.CommonConfigurationKeysPublic;
+import org.apache.hadoop.net.NetworkTopology;
 import org.apache.hadoop.security.AccessControlException;
 import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.util.ReflectionUtils;
+import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.Lock;
 import org.apache.hadoop.yarn.api.records.ApplicationAttemptId;
 import org.apache.hadoop.yarn.api.records.Container;
@@ -59,10 +64,13 @@ import org.apache.hadoop.yarn.server.resourcemanager.rmcontainer.RMContainer;
 import org.apache.hadoop.yarn.server.resourcemanager.rmcontainer.RMContainerEventType;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNode;
 import org.apache.hadoop.yarn.server.resourcemanager.rmnode.RMNodeCleanContainerEvent;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.AbstractSchedulerElementsFactory;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.Allocation;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.QueueMetrics;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.ResourceScheduler;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.SchedulerAppReport;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.SchedulerElementsFactory;
+import org.apache.hadoop.yarn.server.resourcemanager.scheduler.SchedulerNode;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.SchedulerNodeReport;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.SchedulerUtils;
 import org.apache.hadoop.yarn.server.resourcemanager.scheduler.common.fica.FiCaSchedulerApp;
@@ -303,9 +311,14 @@ implements ResourceScheduler, CapacitySchedulerContext, Configurable {
         throw new IllegalStateException(
             "Queue configuration missing child queue names for " + queueName);
       }
-      queue = new LeafQueue(csContext, queueName, parent, applicationComparator,
-                            oldQueues.get(queueName));
       
+      AbstractSchedulerElementsFactory schedulerElementsFactory = 
+          (AbstractSchedulerElementsFactory) ReflectionUtils.newInstance(
+              conf.getClass(YarnConfiguration.RM_SCHEDULER_ELEMENTS_FACTORY_IMPL,
+            SchedulerElementsFactory.class, AbstractSchedulerElementsFactory.class), conf);
+      queue = schedulerElementsFactory.constructLeafQueue(
+          csContext, queueName, parent, applicationComparator, 
+          oldQueues.get(queueName));
       // Used only for unit tests
       queue = hook.hook(queue);
     } else {
@@ -665,7 +678,15 @@ implements ResourceScheduler, CapacitySchedulerContext, Configurable {
   }
 
   private synchronized void addNode(RMNode nodeManager) {
-    this.nodes.put(nodeManager.getNodeID(), new FiCaSchedulerNode(nodeManager));
+    AbstractSchedulerElementsFactory schedulerElementsFactory = 
+        (AbstractSchedulerElementsFactory) ReflectionUtils.newInstance(
+            conf.getClass(YarnConfiguration.RM_SCHEDULER_ELEMENTS_FACTORY_IMPL,
+            SchedulerElementsFactory.class, 
+            AbstractSchedulerElementsFactory.class), conf);
+    
+    this.nodes.put(nodeManager.getNodeID(),
+        schedulerElementsFactory.constructFiCaSchedulerNode(nodeManager));
+    
     Resources.addTo(clusterResource, nodeManager.getTotalCapability());
     root.updateClusterResource(clusterResource);
     ++numNodeManagers;

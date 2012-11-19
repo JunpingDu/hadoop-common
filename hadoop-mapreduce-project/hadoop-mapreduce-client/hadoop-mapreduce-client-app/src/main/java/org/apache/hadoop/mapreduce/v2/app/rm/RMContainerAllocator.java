@@ -18,6 +18,7 @@
 
 package org.apache.hadoop.mapreduce.v2.app.rm;
 
+import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -68,6 +69,7 @@ import org.apache.hadoop.yarn.api.records.NodeReport;
 import org.apache.hadoop.yarn.api.records.NodeState;
 import org.apache.hadoop.yarn.api.records.Priority;
 import org.apache.hadoop.yarn.api.records.Resource;
+import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
 import org.apache.hadoop.yarn.util.RackResolver;
 
@@ -82,9 +84,9 @@ public class RMContainerAllocator extends RMContainerRequestor
   public static final 
   float DEFAULT_COMPLETED_MAPS_PERCENT_FOR_REDUCE_SLOWSTART = 0.05f;
   
-  private static final Priority PRIORITY_FAST_FAIL_MAP;
+  protected static final Priority PRIORITY_FAST_FAIL_MAP;
   private static final Priority PRIORITY_REDUCE;
-  private static final Priority PRIORITY_MAP;
+  static final Priority PRIORITY_MAP;
 
   private Thread eventHandlingThread;
   private final AtomicBoolean stopped;
@@ -124,12 +126,13 @@ public class RMContainerAllocator extends RMContainerRequestor
   private final AssignedRequests assignedRequests = new AssignedRequests();
   
   //holds scheduled requests to be fulfilled by RM
-  private final ScheduledRequests scheduledRequests = new ScheduledRequests();
+  private ScheduledRequests scheduledRequests;
   
-  private int containersAllocated = 0;
+  int containersAllocated = 0;
   private int containersReleased = 0;
-  private int hostLocalAssigned = 0;
-  private int rackLocalAssigned = 0;
+  int hostLocalAssigned = 0;
+  int rackLocalAssigned = 0;
+  int nodegroupLocalAssigned = 0;
   private int lastCompletedTasks = 0;
   
   private boolean recalculateReduceSchedule = false;
@@ -166,6 +169,23 @@ public class RMContainerAllocator extends RMContainerRequestor
         MRJobConfig.MR_AM_JOB_REDUCE_PREEMPTION_LIMIT,
         MRJobConfig.DEFAULT_MR_AM_JOB_REDUCE_PREEMPTION_LIMIT);
     RackResolver.init(conf);
+    Class<? extends ScheduledRequests> scheduledRequestsClass =
+        conf.getClass(YarnConfiguration.RM_SCHEDULED_REQUESTS_CLASS_KEY,
+            ScheduledRequests.class, ScheduledRequests.class);
+    try {
+      // Constructor of nested class will automatically add outer class
+      // as its first parameter, so here we need two parameters rather than
+      // one.
+      Constructor<? extends ScheduledRequests> meth = 
+          scheduledRequestsClass.getDeclaredConstructor(
+              new Class[] {RMContainerAllocator.class, 
+              RMContainerAllocator.class});
+      meth.setAccessible(true);
+      scheduledRequests = meth.newInstance(this, this);
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+    
     retryInterval = getConfig().getLong(MRJobConfig.MR_AM_TO_RM_WAIT_INTERVAL_MS,
                                 MRJobConfig.DEFAULT_MR_AM_TO_RM_WAIT_INTERVAL_MS);
     // Init startTime to current time. If all goes well, it will be reset after
@@ -663,21 +683,27 @@ public class RMContainerAllocator extends RMContainerRequestor
        assignedRequests.reduces.size() * reduceResourceReqt;
   }
   
-  private class ScheduledRequests {
+  class ScheduledRequests {
     
-    private final LinkedList<TaskAttemptId> earlierFailedMaps = 
+    protected final LinkedList<TaskAttemptId> earlierFailedMaps = 
       new LinkedList<TaskAttemptId>();
     
     /** Maps from a host to a list of Map tasks with data on the host */
-    private final Map<String, LinkedList<TaskAttemptId>> mapsHostMapping = 
+    protected final Map<String, LinkedList<TaskAttemptId>> mapsHostMapping = 
       new HashMap<String, LinkedList<TaskAttemptId>>();
-    private final Map<String, LinkedList<TaskAttemptId>> mapsRackMapping = 
+    protected final Map<String, LinkedList<TaskAttemptId>> mapsRackMapping = 
       new HashMap<String, LinkedList<TaskAttemptId>>();
-    private final Map<TaskAttemptId, ContainerRequest> maps = 
+    protected final Map<TaskAttemptId, ContainerRequest> maps = 
       new LinkedHashMap<TaskAttemptId, ContainerRequest>();
     
     private final LinkedHashMap<TaskAttemptId, ContainerRequest> reduces = 
       new LinkedHashMap<TaskAttemptId, ContainerRequest>();
+
+    protected RMContainerAllocator rmContainerAllocator;
+    
+    ScheduledRequests(RMContainerAllocator rmContainerAllocator) {
+      this.rmContainerAllocator = rmContainerAllocator;
+    }
     
     boolean remove(TaskAttemptId tId) {
       ContainerRequest req = null;
@@ -960,7 +986,7 @@ public class RMContainerAllocator extends RMContainerRequestor
     }
     
     @SuppressWarnings("unchecked")
-    private ContainerRequest assignToMap(Container allocated) {
+    protected ContainerRequest assignToMap(Container allocated) {
     //try to assign to maps if present 
       //first by host, then by rack, followed by *
       ContainerRequest assigned = null;

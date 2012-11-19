@@ -90,7 +90,7 @@ import org.apache.hadoop.yarn.util.BuilderUtils;
 @SuppressWarnings("unchecked")
 public class FifoScheduler implements ResourceScheduler, Configurable {
 
-  private static final Log LOG = LogFactory.getLog(FifoScheduler.class);
+  protected static final Log LOG = LogFactory.getLog(FifoScheduler.class);
 
   private static final RecordFactory recordFactory = 
     RecordFactoryProvider.getRecordFactory(null);
@@ -101,7 +101,9 @@ public class FifoScheduler implements ResourceScheduler, Configurable {
   private final static List<Container> EMPTY_CONTAINER_LIST = Arrays.asList(EMPTY_CONTAINER_ARRAY);
   private RMContext rmContext;
 
-  private Map<NodeId, FiCaSchedulerNode> nodes = new ConcurrentHashMap<NodeId, FiCaSchedulerNode>();
+
+  protected Map<NodeId, FiCaSchedulerNode> nodes = 
+      new ConcurrentHashMap<NodeId, FiCaSchedulerNode>();
 
   private boolean initialized;
   private Resource minimumAllocation;
@@ -383,7 +385,7 @@ public class FifoScheduler implements ResourceScheduler, Configurable {
     }
   }
 
-  private int getMaxAllocatableContainers(FiCaSchedulerApp application,
+  protected int getMaxAllocatableContainers(FiCaSchedulerApp application,
       Priority priority, FiCaSchedulerNode node, NodeType type) {
     ResourceRequest offSwitchRequest = 
       application.getResourceRequest(priority, FiCaSchedulerNode.ANY);
@@ -414,14 +416,13 @@ public class FifoScheduler implements ResourceScheduler, Configurable {
     return maxContainers;
   }
 
-
-  private int assignContainersOnNode(FiCaSchedulerNode node, 
+  protected int assignContainersOnNode(FiCaSchedulerNode node, 
       FiCaSchedulerApp application, Priority priority 
   ) {
     // Data-local
     int nodeLocalContainers = 
       assignNodeLocalContainers(node, application, priority); 
-
+    
     // Rack-local
     int rackLocalContainers = 
       assignRackLocalContainers(node, application, priority);
@@ -442,7 +443,7 @@ public class FifoScheduler implements ResourceScheduler, Configurable {
     return (nodeLocalContainers + rackLocalContainers + offSwitchContainers);
   }
 
-  private int assignNodeLocalContainers(FiCaSchedulerNode node, 
+  protected int assignNodeLocalContainers(FiCaSchedulerNode node, 
       FiCaSchedulerApp application, Priority priority) {
     int assignedContainers = 0;
     ResourceRequest request = 
@@ -468,7 +469,7 @@ public class FifoScheduler implements ResourceScheduler, Configurable {
     return assignedContainers;
   }
 
-  private int assignRackLocalContainers(FiCaSchedulerNode node, 
+  protected int assignRackLocalContainers(FiCaSchedulerNode node, 
       FiCaSchedulerApp application, Priority priority) {
     int assignedContainers = 0;
     ResourceRequest request = 
@@ -493,7 +494,7 @@ public class FifoScheduler implements ResourceScheduler, Configurable {
     return assignedContainers;
   }
 
-  private int assignOffSwitchContainers(FiCaSchedulerNode node, 
+  protected int assignOffSwitchContainers(FiCaSchedulerNode node, 
       FiCaSchedulerApp application, Priority priority) {
     int assignedContainers = 0;
     ResourceRequest request = 
@@ -506,7 +507,8 @@ public class FifoScheduler implements ResourceScheduler, Configurable {
     return assignedContainers;
   }
 
-  private int assignContainer(FiCaSchedulerNode node, FiCaSchedulerApp application, 
+  protected int assignContainer(FiCaSchedulerNode node, 
+      FiCaSchedulerApp application,
       Priority priority, int assignableContainers, 
       ResourceRequest request, NodeType type) {
     LOG.debug("assignContainers:" +
@@ -721,7 +723,7 @@ public class FifoScheduler implements ResourceScheduler, Configurable {
      
   }
   
-  private Resource clusterResource = recordFactory.newRecordInstance(Resource.class);
+  protected Resource clusterResource = recordFactory.newRecordInstance(Resource.class);
   private Resource usedResource = recordFactory.newRecordInstance(Resource.class);
 
   private synchronized void removeNode(RMNode nodeInfo) {
@@ -756,7 +758,7 @@ public class FifoScheduler implements ResourceScheduler, Configurable {
     return DEFAULT_QUEUE.getQueueUserAclInfo(null); 
   }
 
-  private synchronized void addNode(RMNode nodeManager) {
+  protected synchronized void addNode(RMNode nodeManager) {
     this.nodes.put(nodeManager.getNodeID(), new FiCaSchedulerNode(nodeManager));
     Resources.addTo(clusterResource, nodeManager.getTotalCapability());
   }
