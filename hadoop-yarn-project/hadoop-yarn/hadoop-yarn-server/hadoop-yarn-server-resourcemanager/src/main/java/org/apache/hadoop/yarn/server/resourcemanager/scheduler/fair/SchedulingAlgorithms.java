@@ -27,6 +27,7 @@ import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.classification.InterfaceAudience.Private;
 import org.apache.hadoop.classification.InterfaceStability.Unstable;
 import org.apache.hadoop.yarn.api.records.Resource;
+import org.apache.hadoop.yarn.server.resourcemanager.resource.ResourceCalculator;
 import org.apache.hadoop.yarn.server.resourcemanager.resource.Resources;
 
 /**
@@ -77,19 +78,24 @@ class SchedulingAlgorithms {
   public static class FairShareComparator implements Comparator<Schedulable>, Serializable {
     private static final long serialVersionUID = 5564969375856699313L;
 
+    private final ResourceCalculator resourceComparator;
+    public FairShareComparator(ResourceCalculator resourceComparator) {
+      this.resourceComparator = resourceComparator;
+    }
+    
     @Override
     public int compare(Schedulable s1, Schedulable s2) {
       double minShareRatio1, minShareRatio2;
       double useToWeightRatio1, useToWeightRatio2;
-      Resource minShare1 = Resources.min(s1.getMinShare(), s1.getDemand());
-      Resource minShare2 = Resources.min(s2.getMinShare(), s2.getDemand());
-      boolean s1Needy = Resources.lessThan(s1.getResourceUsage(), minShare1);
-      boolean s2Needy = Resources.lessThan(s2.getResourceUsage(), minShare2);
+      Resource minShare1 = Resources.min(resourceComparator, s1.getMinShare(), s1.getDemand());
+      Resource minShare2 = Resources.min(resourceComparator, s2.getMinShare(), s2.getDemand());
+      boolean s1Needy = Resources.lessThan(resourceComparator, s1.getResourceUsage(), minShare1);
+      boolean s2Needy = Resources.lessThan(resourceComparator, s2.getResourceUsage(), minShare2);
       Resource one = Resources.createResource(1);
       minShareRatio1 = (double) s1.getResourceUsage().getMemory() /
-          Resources.max(minShare1, one).getMemory();
+          Resources.max(resourceComparator, minShare1, one).getMemory();
       minShareRatio2 = (double) s2.getResourceUsage().getMemory() /
-          Resources.max(minShare2, one).getMemory();
+          Resources.max(resourceComparator, minShare2, one).getMemory();
       useToWeightRatio1 = s1.getResourceUsage().getMemory() / s1.getWeight();
       useToWeightRatio2 = s2.getResourceUsage().getMemory() / s2.getWeight();
       int res = 0;
@@ -164,6 +170,7 @@ class SchedulingAlgorithms {
    * iterations of binary search is a constant (dependent on desired precision).
    */
   public static void computeFairShares(
+      ResourceCalculator resourceComparator,
       Collection<? extends Schedulable> schedulables, Resource totalResources) {
     // Find an upper bound on R that we can use in our binary search. We start
     // at R = 1 and double it until we have either used totalSlots slots or we
@@ -172,9 +179,9 @@ class SchedulingAlgorithms {
     for (Schedulable sched: schedulables) {
       Resources.addTo(totalDemand, sched.getDemand());
     }
-    Resource cap = Resources.min(totalDemand, totalResources);
+    Resource cap = Resources.min(resourceComparator, totalDemand, totalResources);
     double rMax = 1.0;
-    while (Resources.lessThan(resUsedWithWeightToResRatio(rMax, schedulables), cap)) {
+    while (Resources.lessThan(resourceComparator, resUsedWithWeightToResRatio(rMax, schedulables), cap)) {
       rMax *= 2.0;
     }
     // Perform the binary search for up to COMPUTE_FAIR_SHARES_ITERATIONS steps
@@ -182,7 +189,7 @@ class SchedulingAlgorithms {
     double right = rMax;
     for (int i = 0; i < COMPUTE_FAIR_SHARES_ITERATIONS; i++) {
       double mid = (left + right) / 2.0;
-      if (Resources.lessThan(resUsedWithWeightToResRatio(mid, schedulables), cap)) {
+      if (Resources.lessThan(resourceComparator, resUsedWithWeightToResRatio(mid, schedulables), cap)) {
         left = mid;
       } else {
         right = mid;

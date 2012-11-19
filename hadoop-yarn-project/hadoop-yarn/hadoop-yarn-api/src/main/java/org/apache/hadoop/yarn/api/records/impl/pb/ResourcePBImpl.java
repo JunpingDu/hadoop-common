@@ -64,8 +64,24 @@ public class ResourcePBImpl extends Resource {
   }
 
   @Override
+  public int getCores() {
+    ResourceProtoOrBuilder p = viaProto ? proto : builder;
+    return (p.getCores());
+  }
+
+  @Override
+  public void setCores(int cores) {
+    maybeInitBuilder();
+    builder.setCores((cores));
+  }
+
+  @Override
   public int compareTo(Resource other) {
-    return this.getMemory() - other.getMemory();
+    int diff = this.getMemory() - other.getMemory();
+    if (diff == 0) {
+      diff = this.getCores() - other.getCores();
+    }
+    return diff;
   }
   
   

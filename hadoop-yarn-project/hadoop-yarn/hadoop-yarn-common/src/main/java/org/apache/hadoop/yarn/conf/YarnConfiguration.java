@@ -31,8 +31,10 @@ import org.apache.hadoop.yarn.api.ApplicationConstants;
 import com.google.common.base.Joiner;
 import com.google.common.base.Splitter;
 
+import com.google.common.base.Joiner;
+
 public class YarnConfiguration extends Configuration {
-  private static final Splitter ADDR_SPLITTER = Splitter.on(':').trimResults();
+
   private static final Joiner JOINER = Joiner.on("");
 
   private static final String YARN_DEFAULT_XML_FILE = "yarn-default.xml";
@@ -111,16 +113,26 @@ public class YarnConfiguration extends Configuration {
   public static final String DEFAULT_RM_SCHEDULER_ADDRESS = "0.0.0.0:" +
     DEFAULT_RM_SCHEDULER_PORT;
 
-  /** Miniumum memory request grant-able by the RM scheduler. */
+  /** Miniumum request grant-able by the RM scheduler. */
   public static final String RM_SCHEDULER_MINIMUM_ALLOCATION_MB =
     YARN_PREFIX + "scheduler.minimum-allocation-mb";
-  public static final int DEFAULT_RM_SCHEDULER_MINIMUM_ALLOCATION_MB = 1024;
+  public static final int DEFAULT_RM_SCHEDULER_MINIMUM_ALLOCATION_MB = 128;
+  public static final String RM_SCHEDULER_MINIMUM_ALLOCATION_CORES =
+      YARN_PREFIX + "scheduler.minimum-allocation-cores";
+    public static final int DEFAULT_RM_SCHEDULER_MINIMUM_ALLOCATION_CORES = 1;
 
-  /** Maximum memory request grant-able by the RM scheduler. */
+  /** Maximum request grant-able by the RM scheduler. */
   public static final String RM_SCHEDULER_MAXIMUM_ALLOCATION_MB =
     YARN_PREFIX + "scheduler.maximum-allocation-mb";
   public static final int DEFAULT_RM_SCHEDULER_MAXIMUM_ALLOCATION_MB = 8192;
+  public static final String RM_SCHEDULER_MAXIMUM_ALLOCATION_CORES =
+      YARN_PREFIX + "scheduler.maximum-allocation-cores";
+  public static final int DEFAULT_RM_SCHEDULER_MAXIMUM_ALLOCATION_CORES = 32;
 
+  /** ResourceComparator for scheduling. */
+  public static final String RESOURCE_CALCULATOR_CLASS =
+      YARN_PREFIX + ".scheduler.resource-comparator";
+    
   /** Number of threads to handle scheduler interface.*/
   public static final String RM_SCHEDULER_CLIENT_THREAD_COUNT =
     RM_PREFIX + "scheduler.client.thread-count";
@@ -412,6 +424,10 @@ public class YarnConfiguration extends Configuration {
   public static final String NM_PMEM_MB = NM_PREFIX + "resource.memory-mb";
   public static final int DEFAULT_NM_PMEM_MB = 8 * 1024;
 
+  /** Number of CPU Cores which can be allocated for containers.*/
+  public static final String NM_CORES = NM_PREFIX + "resource.cpu-cores";
+  public static final int DEFAULT_NM_CORES = 8;
+
   public static final String NM_VMEM_PMEM_RATIO =
     NM_PREFIX + "vmem-pmem-ratio";
   public static final float DEFAULT_NM_VMEM_PMEM_RATIO = 2.1f;
@@ -661,4 +677,5 @@ public class YarnConfiguration extends Configuration {
   public static String getRMWebAppURL(Configuration conf) {
     return JOINER.join("http://", getRMWebAppHostAndPort(conf));
   }
+  
 }

@@ -65,6 +65,7 @@ public class FiCaSchedulerNode extends SchedulerNode {
   public FiCaSchedulerNode(RMNode node) {
     this.rmNode = node;
     this.availableResource.setMemory(node.getTotalCapability().getMemory());
+    this.availableResource.setCores(node.getTotalCapability().getCores());
   }
 
   public RMNode getRMNode() {

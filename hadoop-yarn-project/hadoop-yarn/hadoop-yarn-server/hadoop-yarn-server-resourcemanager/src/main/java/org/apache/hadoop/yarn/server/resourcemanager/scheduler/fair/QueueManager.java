@@ -42,6 +42,7 @@ import org.apache.hadoop.security.authorize.AccessControlList;
 import org.apache.hadoop.yarn.api.records.QueueACL;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.conf.YarnConfiguration;
+import org.apache.hadoop.yarn.server.resourcemanager.resource.ResourceCalculator;
 import org.apache.hadoop.yarn.server.resourcemanager.resource.Resources;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -146,9 +147,12 @@ public class QueueManager {
   
   //Monitor object for defaultSchedulingMode
   private Object defaultSchedulingModeMO = new Object();
+
+  private ResourceCalculator resourceComparator;
   
   public QueueManager(FairScheduler scheduler) {
     this.scheduler = scheduler;
+    this.resourceComparator = scheduler.getResourceComparator();
   }
 
   public void initialize() throws IOException, SAXException,
@@ -343,7 +347,8 @@ public class QueueManager {
         }
         queueAcls.put(queueName, acls);
         if (maxQueueResources.containsKey(queueName) && minQueueResources.containsKey(queueName)
-            && Resources.lessThan(maxQueueResources.get(queueName),
+            && Resources.lessThan(resourceComparator, 
+                maxQueueResources.get(queueName),
                 minQueueResources.get(queueName))) {
           LOG.warn(String.format("Queue %s has max resources %d less than min resources %d",
               queueName, maxQueueResources.get(queueName), minQueueResources.get(queueName)));

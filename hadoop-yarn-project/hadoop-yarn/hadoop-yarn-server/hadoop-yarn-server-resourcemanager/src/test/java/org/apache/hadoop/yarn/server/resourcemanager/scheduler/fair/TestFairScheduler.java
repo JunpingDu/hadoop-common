@@ -773,16 +773,16 @@ public class TestFairScheduler {
     QueueManager queueManager = scheduler.getQueueManager();
     queueManager.initialize();
 
-    // Create four nodes
-    RMNode node1 = MockNodes.newNodeInfo(1, Resources.createResource(2 * 1024));
+    // Create three nodes
+    RMNode node1 = MockNodes.newNodeInfo(1, Resources.createResource(2 * 1024, 2));
     NodeAddedSchedulerEvent nodeEvent1 = new NodeAddedSchedulerEvent(node1);
     scheduler.handle(nodeEvent1);
 
-    RMNode node2 = MockNodes.newNodeInfo(1, Resources.createResource(2 * 1024));
+    RMNode node2 = MockNodes.newNodeInfo(1, Resources.createResource(2 * 1024, 2));
     NodeAddedSchedulerEvent nodeEvent2 = new NodeAddedSchedulerEvent(node2);
     scheduler.handle(nodeEvent2);
 
-    RMNode node3 = MockNodes.newNodeInfo(1, Resources.createResource(2 * 1024));
+    RMNode node3 = MockNodes.newNodeInfo(1, Resources.createResource(2 * 1024, 2));
     NodeAddedSchedulerEvent nodeEvent3 = new NodeAddedSchedulerEvent(node3);
     scheduler.handle(nodeEvent3);
 
@@ -846,7 +846,7 @@ public class TestFairScheduler {
     // We should be able to claw back one container from A and B each.
     // Make sure it is lowest priority container.
     scheduler.preemptResources(scheduler.getQueueSchedulables(),
-        Resources.createResource(2 * 1024));
+        Resources.createResource(2 * 1024, 2));
     assertEquals(1, scheduler.applications.get(app1).getLiveContainers().size());
     assertEquals(1, scheduler.applications.get(app2).getLiveContainers().size());
     assertEquals(0, scheduler.applications.get(app3).getLiveContainers().size());
@@ -857,7 +857,7 @@ public class TestFairScheduler {
     // We should be able to claw back another container from A and B each.
     // Make sure it is lowest priority container.
     scheduler.preemptResources(scheduler.getQueueSchedulables(),
-        Resources.createResource(2 * 1024));
+        Resources.createResource(2 * 1024, 2));
     assertEquals(1, scheduler.applications.get(app1).getLiveContainers().size());
     assertEquals(0, scheduler.applications.get(app2).getLiveContainers().size());
     assertEquals(0, scheduler.applications.get(app3).getLiveContainers().size());
@@ -867,7 +867,7 @@ public class TestFairScheduler {
 
     // Now A and B are below fair share, so preemption shouldn't do anything
     scheduler.preemptResources(scheduler.getQueueSchedulables(),
-        Resources.createResource(2 * 1024));
+        Resources.createResource(2 * 1024, 2));
     assertEquals(1, scheduler.applications.get(app1).getLiveContainers().size());
     assertEquals(0, scheduler.applications.get(app2).getLiveContainers().size());
     assertEquals(0, scheduler.applications.get(app3).getLiveContainers().size());
@@ -914,7 +914,7 @@ public class TestFairScheduler {
     QueueManager queueManager = scheduler.getQueueManager();
     queueManager.initialize();
 
-    // Create four nodes
+    // Create three nodes
     RMNode node1 = MockNodes.newNodeInfo(1, Resources.createResource(2 * 1024));
     NodeAddedSchedulerEvent nodeEvent1 = new NodeAddedSchedulerEvent(node1);
     scheduler.handle(nodeEvent1);

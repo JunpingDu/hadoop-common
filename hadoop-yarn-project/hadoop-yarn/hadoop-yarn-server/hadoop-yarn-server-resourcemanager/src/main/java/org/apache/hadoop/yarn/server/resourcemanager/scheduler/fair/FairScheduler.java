@@ -51,6 +51,8 @@ import org.apache.hadoop.yarn.server.resourcemanager.RMAuditLogger;
 import org.apache.hadoop.yarn.server.resourcemanager.RMAuditLogger.AuditConstants;
 import org.apache.hadoop.yarn.server.resourcemanager.RMContext;
 import org.apache.hadoop.yarn.server.resourcemanager.recovery.Store.RMState;
+import org.apache.hadoop.yarn.server.resourcemanager.resource.ResourceCalculator;
+import org.apache.hadoop.yarn.server.resourcemanager.resource.DefaultCalculator;
 import org.apache.hadoop.yarn.server.resourcemanager.resource.Resources;
 import org.apache.hadoop.yarn.server.resourcemanager.rmapp.attempt.RMAppAttemptEvent;
 import org.apache.hadoop.yarn.server.resourcemanager.rmapp.attempt.RMAppAttemptEventType;
@@ -137,9 +139,15 @@ public class FairScheduler implements ResourceScheduler {
   protected boolean assignMultiple; // Allocate multiple containers per heartbeat
   protected int maxAssign; // Max containers to assign per heartbeat
 
-
+  private ResourceCalculator resourceComparator =
+      new DefaultCalculator();
+  
   public FairSchedulerConfiguration getConf() {
     return this.conf;
+  }
+
+  public ResourceCalculator getResourceComparator() {
+    return resourceComparator;
   }
 
   public QueueManager getQueueManager() {
@@ -197,7 +205,7 @@ public class FairScheduler implements ResourceScheduler {
       // Compute fair shares based on updated demands
       List<FSQueueSchedulable> queueScheds = this.getQueueSchedulables();
       SchedulingAlgorithms.computeFairShares(
-          queueScheds, clusterCapacity);
+          resourceComparator,queueScheds, clusterCapacity);
 
       // Update queue metrics for this queue
       for (FSQueueSchedulable sched : queueScheds) {
@@ -237,8 +245,10 @@ public class FairScheduler implements ResourceScheduler {
    * Is a queue below its min share for the given task type?
    */
   boolean isStarvedForMinShare(FSQueueSchedulable sched) {
-    Resource desiredShare = Resources.min(sched.getMinShare(), sched.getDemand());
-    return Resources.lessThan(sched.getResourceUsage(), desiredShare);
+    Resource desiredShare = 
+        Resources.min(resourceComparator, sched.getMinShare(), sched.getDemand());
+    return Resources.lessThan(resourceComparator, 
+        sched.getResourceUsage(), desiredShare);
   }
 
   /**
@@ -246,9 +256,13 @@ public class FairScheduler implements ResourceScheduler {
    * This is defined as being below half its fair share.
    */
   boolean isStarvedForFairShare(FSQueueSchedulable sched) {
-    Resource desiredFairShare = Resources.max(
-        Resources.multiply(sched.getFairShare(), .5), sched.getDemand());
-    return Resources.lessThan(sched.getResourceUsage(), desiredFairShare);
+    Resource desiredFairShare = 
+        Resources.max(
+            resourceComparator,
+            Resources.multiplyAndRoundDown(sched.getFairShare(), .5), 
+            sched.getDemand());
+    return Resources.lessThan(resourceComparator, 
+        sched.getResourceUsage(), desiredFairShare);
   }
 
   /**
@@ -275,7 +289,8 @@ public class FairScheduler implements ResourceScheduler {
     for (FSQueueSchedulable sched: getQueueSchedulables()) {
       resToPreempt = Resources.add(resToPreempt, resToPreempt(sched, curTime));
     }
-    if (Resources.greaterThan(resToPreempt, Resources.none())) {
+    if (Resources.greaterThan(
+        resourceComparator, resToPreempt, Resources.none())) {
       preemptResources(getQueueSchedulables(), resToPreempt);
     }
   }
@@ -298,7 +313,8 @@ public class FairScheduler implements ResourceScheduler {
     // Collect running containers from over-scheduled queues
     List<RMContainer> runningContainers = new ArrayList<RMContainer>();
     for (FSQueueSchedulable sched: scheds) {
-      if (Resources.greaterThan(sched.getResourceUsage(), sched.getFairShare())) {
+      if (Resources.greaterThan(resourceComparator, 
+          sched.getResourceUsage(), sched.getFairShare())) {
         for (AppSchedulable as: sched.getAppSchedulables()) {
           for (RMContainer c : as.getApp().getLiveContainers()) {
             runningContainers.add(c);
@@ -321,7 +337,8 @@ public class FairScheduler implements ResourceScheduler {
     // tasks, making sure we don't kill too many from any queue
     for (RMContainer container: runningContainers) {
      FSQueueSchedulable sched = queues.get(container);
-      if (Resources.greaterThan(sched.getResourceUsage(), sched.getFairShare())) {
+      if (Resources.greaterThan(resourceComparator, 
+          sched.getResourceUsage(), sched.getFairShare())) {
         LOG.info("Preempting container (prio=" + container.getContainer().getPriority() +
             "res=" + container.getContainer().getResource() +
             ") from queue " + sched.getQueue().getName());
@@ -358,17 +375,23 @@ public class FairScheduler implements ResourceScheduler {
     Resource resDueToMinShare = Resources.none();
     Resource resDueToFairShare = Resources.none();
     if (curTime - sched.getLastTimeAtMinShare() > minShareTimeout) {
-      Resource target = Resources.min(sched.getMinShare(), sched.getDemand());
-      resDueToMinShare = Resources.max(Resources.none(),
-                            Resources.subtract(target, sched.getResourceUsage()));
+      Resource target = 
+          Resources.min(resourceComparator, sched.getMinShare(), 
+              sched.getDemand());
+      resDueToMinShare = Resources.max(resourceComparator, Resources.none(),
+                            Resources.subtract(target, 
+                                sched.getResourceUsage()));
     }
     if (curTime - sched.getLastTimeAtHalfFairShare() > fairShareTimeout) {
-      Resource target = Resources.min(sched.getFairShare(), sched.getDemand());
-      resDueToFairShare = Resources.max(Resources.none(),
+      Resource target = Resources.min(resourceComparator, 
+          sched.getFairShare(), sched.getDemand());
+      resDueToFairShare = Resources.max(resourceComparator, Resources.none(),
           Resources.subtract(target, sched.getResourceUsage()));
     }
-    Resource resToPreempt = Resources.max(resDueToMinShare, resDueToFairShare);
-    if (Resources.greaterThan(resToPreempt, Resources.none())) {
+    Resource resToPreempt = Resources.max(resourceComparator, 
+        resDueToMinShare, resDueToFairShare);
+    if (Resources.greaterThan(resourceComparator, 
+        resToPreempt, Resources.none())) {
       String message = "Should preempt " + resToPreempt + " res for queue "
           + sched.getName() + ": resDueToMinShare = " + resDueToMinShare
           + ", resDueToFairShare = " + resDueToFairShare;
@@ -765,11 +788,12 @@ public class FairScheduler implements ResourceScheduler {
       while (true) {
         // At most one task is scheduled each iteration of this loop
         List<FSQueueSchedulable> scheds = this.getQueueSchedulables();
-        Collections.sort(scheds, new SchedulingAlgorithms.FairShareComparator());
+        Collections.sort(scheds, new SchedulingAlgorithms.FairShareComparator(resourceComparator));
         boolean assignedContainer = false;
         for (FSQueueSchedulable sched : scheds) {
           Resource assigned = sched.assignContainer(node, false);
-          if (Resources.greaterThan(assigned, Resources.none())) {
+          if (Resources.greaterThan(resourceComparator, 
+              assigned, Resources.none())) {
             eventLog.log("ASSIGN", nm.getHostName(), assigned);
             assignedContainers++;
             assignedContainer = true;

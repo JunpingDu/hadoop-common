@@ -22,7 +22,7 @@ import static org.junit.Assert.assertEquals;
 
 import org.apache.hadoop.yarn.api.records.ResourceRequest;
 import org.apache.hadoop.yarn.api.records.impl.pb.ResourceRequestPBImpl;
-import org.apache.hadoop.yarn.server.resourcemanager.resource.Resource;
+import org.apache.hadoop.yarn.server.resourcemanager.resource.Resources;
 import org.junit.Test;
 
 public class TestSchedulerUtils {
@@ -33,22 +33,22 @@ public class TestSchedulerUtils {
     ResourceRequest ask = new ResourceRequestPBImpl();
 
     // case negative memory
-    ask.setCapability(Resource.createResource(-1024));
+    ask.setCapability(Resources.createResource(-1024));
     SchedulerUtils.normalizeRequest(ask, minMemory);
     assertEquals(minMemory, ask.getCapability().getMemory());
 
     // case zero memory
-    ask.setCapability(Resource.createResource(0));
+    ask.setCapability(Resources.createResource(0));
     SchedulerUtils.normalizeRequest(ask, minMemory);
     assertEquals(minMemory, ask.getCapability().getMemory());
 
     // case memory is a multiple of minMemory
-    ask.setCapability(Resource.createResource(2 * minMemory));
+    ask.setCapability(Resources.createResource(2 * minMemory));
     SchedulerUtils.normalizeRequest(ask, minMemory);
     assertEquals(2 * minMemory, ask.getCapability().getMemory());
 
     // case memory is not a multiple of minMemory
-    ask.setCapability(Resource.createResource(minMemory + 10));
+    ask.setCapability(Resources.createResource(minMemory + 10));
     SchedulerUtils.normalizeRequest(ask, minMemory);
     assertEquals(2 * minMemory, ask.getCapability().getMemory());
 
