@@ -98,10 +98,12 @@ import org.apache.hadoop.mapreduce.v2.app.launcher.ContainerRemoteLaunchEvent;
 import org.apache.hadoop.mapreduce.v2.app.rm.ContainerAllocator;
 import org.apache.hadoop.mapreduce.v2.app.rm.ContainerAllocatorEvent;
 import org.apache.hadoop.mapreduce.v2.app.rm.ContainerRequestEvent;
+import org.apache.hadoop.mapreduce.v2.app.rm.ContainerRequestWithNodeGroupEvent;
 import org.apache.hadoop.mapreduce.v2.app.speculate.SpeculatorEvent;
 import org.apache.hadoop.mapreduce.v2.app.taskclean.TaskCleanupEvent;
 import org.apache.hadoop.mapreduce.v2.util.MRApps;
 import org.apache.hadoop.net.NetUtils;
+import org.apache.hadoop.net.NetworkTopology;
 import org.apache.hadoop.security.Credentials;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.hadoop.security.token.Token;
@@ -120,6 +122,7 @@ import org.apache.hadoop.yarn.api.records.LocalResourceVisibility;
 import org.apache.hadoop.yarn.api.records.NodeId;
 import org.apache.hadoop.yarn.api.records.Resource;
 import org.apache.hadoop.yarn.api.records.URL;
+import org.apache.hadoop.yarn.conf.YarnConfiguration;
 import org.apache.hadoop.yarn.event.EventHandler;
 import org.apache.hadoop.yarn.factories.RecordFactory;
 import org.apache.hadoop.yarn.factory.providers.RecordFactoryProvider;
@@ -948,6 +951,9 @@ public abstract class TaskAttemptImpl implements
     }
   }
 
+  public Configuration getConf() {
+    return conf;
+  }
   @Override
   public float getProgress() {
     readLock.lock();
@@ -1209,14 +1215,36 @@ public abstract class TaskAttemptImpl implements
                 taskAttempt.attemptId, 
                 taskAttempt.resourceCapability));
       } else {
-        Set<String> racks = new HashSet<String>(); 
+        Set<String> racks = new HashSet<String>();
+        boolean withNodeGroup = taskAttempt.getConf().getBoolean(
+            YarnConfiguration.NET_TOPOLOGY_WITH_NODEGROUP, false);
         for (String host : taskAttempt.dataLocalHosts) {
-          racks.add(RackResolver.resolve(host).getNetworkLocation());
+          if (withNodeGroup) {
+          racks.add(NetworkTopology.getFirstHalf(
+              RackResolver.resolve(host).getNetworkLocation()));
+          } else {
+            racks.add(RackResolver.resolve(host).getNetworkLocation());
+          }
         }
-        taskAttempt.eventHandler.handle(new ContainerRequestEvent(
-            taskAttempt.attemptId, taskAttempt.resourceCapability, taskAttempt
-                .resolveHosts(taskAttempt.dataLocalHosts), racks
-                .toArray(new String[racks.size()])));
+
+        if (withNodeGroup) {
+          String[] nodegroups = new String[taskAttempt.dataLocalHosts.length];
+          int i = 0;
+          for (String host : taskAttempt.dataLocalHosts) {
+            nodegroups[i++] = NetworkTopology.getLastHalf(
+                RackResolver.resolve(host).getNetworkLocation());
+          }
+          taskAttempt.eventHandler.handle(
+              new ContainerRequestWithNodeGroupEvent(taskAttempt.attemptId,
+                  taskAttempt.resourceCapability, taskAttempt.resolveHosts(taskAttempt.dataLocalHosts),
+                  nodegroups, racks.toArray(new String[racks.size()])));
+        } else {
+          taskAttempt.eventHandler.handle(
+              new ContainerRequestEvent(taskAttempt.attemptId,
+                  taskAttempt.resourceCapability,
+                  taskAttempt.resolveHosts(taskAttempt.dataLocalHosts),
+                  racks.toArray(new String[racks.size()])));
+        }
       }
     }
   }
